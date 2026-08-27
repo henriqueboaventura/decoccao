@@ -1,0 +1,17 @@
+{
+  "name": "Decocção — Calculadora de Mostura",
+  "short_name": "Decocção",
+  "description": "Monte, ajuste e salve programas de decocção (simples, dupla e tripla) para mostura de cerveja.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#15110b",
+  "theme_color": "#15110b",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

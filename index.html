@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Decocção — Calculadora de Programas de Mostura</title>
+<meta name="description" content="Monte, ajuste e salve programas de decocção (simples, dupla e tripla) para mostura de cerveja." />
+<meta name="theme-color" content="#15110b" media="(prefers-color-scheme: dark)" />
+<meta name="theme-color" content="#f2ede2" media="(prefers-color-scheme: light)" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="icons/icon-180.png" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<header class="app-header">
+  <div class="brand">
+    <span class="brand__mark">Deco<span>c</span>ção</span>
+    <span class="brand__tag">Programas de mostura</span>
+  </div>
+  <div class="method-tabs" id="methodTabs" role="tablist" aria-label="Método de decocção"></div>
+</header>
+
+<main class="layout">
+  <section class="panel params-panel" aria-label="Parâmetros do programa">
+    <form id="paramsForm"></form>
+    <div class="toolbar">
+      <div class="select-line">
+        <select id="presetSelect" aria-label="Predefinições salvas">
+          <option value="">Predefinições…</option>
+        </select>
+        <button class="btn" id="loadPresetBtn" type="button" title="Carregar predefinição">Abrir</button>
+        <button class="btn btn--danger" id="deletePresetBtn" type="button" title="Excluir predefinição">✕</button>
+      </div>
+      <div class="toolbar__row">
+        <button class="btn btn--primary" id="savePresetBtn" type="button">Salvar como…</button>
+        <button class="btn btn--ghost" id="resetBtn" type="button">Restaurar padrão</button>
+      </div>
+      <div class="toolbar__row">
+        <button class="btn" id="exportBtn" type="button">Exportar JSON</button>
+        <button class="btn" id="importBtn" type="button">Importar JSON</button>
+        <input type="file" id="importFile" accept="application/json" hidden />
+      </div>
+      <p class="autosave-note" id="autosaveNote">Alterações salvas automaticamente neste dispositivo.</p>
+    </div>
+  </section>
+
+  <section class="results-panel" aria-label="Programa calculado">
+    <div class="panel summary-bar">
+      <div class="summary-bar__total" id="totalTime">0<span>min</span></div>
+      <div class="summary-bar__meta">
+        <span>Etapas: <strong id="stepCount">0</strong></span>
+        <span>Temp. final mostura: <strong id="finalMashTemp">–</strong></span>
+        <span>Pico fervura: <strong id="peakBoilTemp">–</strong></span>
+      </div>
+    </div>
+
+    <div class="panel chart-panel">
+      <div class="chart-legend">
+        <span><i class="chart-legend__dot" style="background:var(--steel)"></i>Tina de mostura</span>
+        <span><i class="chart-legend__dot" style="background:var(--copper)"></i>Tina de fervura (decocção)</span>
+      </div>
+      <svg id="chart" class="chart-svg" viewBox="0 0 640 200" preserveAspectRatio="none" role="img" aria-label="Curva de temperatura ao longo do tempo"></svg>
+    </div>
+
+    <div class="panel schedule-panel">
+      <div class="schedule-title">Passo a passo do programa</div>
+      <div class="ladder" id="ladder"></div>
+    </div>
+  </section>
+</main>
+
+<p class="footer-note">Baseado na planilha original de cálculos de decocção. Funciona offline — instale como app pelo menu do navegador.</p>
+
+<dialog class="modal" id="saveModal">
+  <div class="modal__body">
+    <p class="modal__title">Salvar predefinição</p>
+    <input type="text" id="presetNameInput" placeholder="Nome da predefinição" maxlength="60" />
+    <div class="modal__actions">
+      <button class="btn btn--ghost" id="cancelSaveBtn" type="button">Cancelar</button>
+      <button class="btn btn--primary" id="confirmSaveBtn" type="button">Salvar</button>
+    </div>
+  </div>
+</dialog>
+
+<div class="toast" id="toast"></div>
+
+<script src="methods.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
