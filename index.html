@@ -26,15 +26,18 @@
   <section class="panel params-panel" aria-label="Parâmetros do programa">
     <form id="paramsForm"></form>
     <div class="toolbar">
-      <div class="select-line">
+      <!-- Predefinições: recurso mantido no app.js, oculto da interface por ora. -->
+      <div class="select-line" hidden>
         <select id="presetSelect" aria-label="Predefinições salvas">
           <option value="">Predefinições…</option>
         </select>
         <button class="btn" id="loadPresetBtn" type="button" title="Carregar predefinição">Abrir</button>
         <button class="btn btn--danger" id="deletePresetBtn" type="button" title="Excluir predefinição">✕</button>
       </div>
-      <div class="toolbar__row">
+      <div class="toolbar__row" hidden>
         <button class="btn btn--primary" id="savePresetBtn" type="button">Salvar como…</button>
+      </div>
+      <div class="toolbar__row">
         <button class="btn btn--ghost" id="resetBtn" type="button">Restaurar padrão</button>
       </div>
       <div class="toolbar__row">
@@ -56,12 +59,25 @@
       </div>
     </div>
 
+    <div class="panel timer-panel">
+      <div class="timer-display">
+        <span class="timer-clock" id="timerClock">00:00</span>
+        <span class="timer-step" id="timerStepLabel">Pronto para começar</span>
+      </div>
+      <div class="timer-controls">
+        <button class="btn btn--primary" id="timerToggleBtn" type="button">Iniciar</button>
+        <button class="btn" id="timerNextBtn" type="button">Próxima etapa</button>
+        <button class="btn btn--ghost" id="timerResetBtn" type="button">Resetar</button>
+      </div>
+    </div>
+
     <div class="panel chart-panel">
       <div class="chart-legend">
         <span><i class="chart-legend__dot" style="background:var(--steel)"></i>Tina de mostura</span>
         <span><i class="chart-legend__dot" style="background:var(--copper)"></i>Tina de fervura (decocção)</span>
+        <span><i class="chart-legend__dot" style="background:var(--amber)"></i>Agora</span>
       </div>
-      <svg id="chart" class="chart-svg" viewBox="0 0 640 200" preserveAspectRatio="none" role="img" aria-label="Curva de temperatura ao longo do tempo"></svg>
+      <svg id="chart" class="chart-svg" viewBox="0 0 640 218" preserveAspectRatio="none" role="img" aria-label="Curva de temperatura ao longo do tempo"></svg>
     </div>
 
     <div class="panel schedule-panel">

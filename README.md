@@ -10,7 +10,12 @@ ferramenta usável no celular ou no computador, sem depender de Excel.
   aquecimento, tempos de transferência etc.) ficam editáveis em formulário.
 - A tabela de passo a passo, o tempo total e o gráfico de temperatura x tempo
   são recalculados na hora, reproduzindo as fórmulas originais da planilha
-  (ver `methods.js`).
+  (ver `methods.js`). O gráfico marca cada mudança de temperatura com um
+  ponto e o respectivo horário no eixo X.
+- Cronômetro de brassagem: iniciar/pausar/resetar/pular para a próxima etapa,
+  com a etapa atual destacada na lista e uma linha marcando o momento atual
+  no gráfico. O estado do cronômetro é salvo por método e sobrevive a um
+  recarregamento de página (baseado em relógio de parede, não em contador).
 - Funciona offline como PWA (Service Worker + manifest) e pode ser instalado
   no celular ou desktop.
 - Salva a configuração atual automaticamente no `localStorage` do navegador.

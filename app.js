@@ -6,6 +6,7 @@
   const CURRENT_KEY = (id) => `${STORAGE_PREFIX}:current:${id}`;
   const PRESETS_KEY = `${STORAGE_PREFIX}:presets`;
   const LAST_METHOD_KEY = `${STORAGE_PREFIX}:lastMethod`;
+  const TIMER_KEY = (id) => `${STORAGE_PREFIX}:timer:${id}`;
 
   const el = {
     methodTabs: document.getElementById("methodTabs"),
@@ -16,6 +17,12 @@
     stepCount: document.getElementById("stepCount"),
     finalMashTemp: document.getElementById("finalMashTemp"),
     peakBoilTemp: document.getElementById("peakBoilTemp"),
+    timerPanel: document.querySelector(".timer-panel"),
+    timerClock: document.getElementById("timerClock"),
+    timerStepLabel: document.getElementById("timerStepLabel"),
+    timerToggleBtn: document.getElementById("timerToggleBtn"),
+    timerNextBtn: document.getElementById("timerNextBtn"),
+    timerResetBtn: document.getElementById("timerResetBtn"),
     presetSelect: document.getElementById("presetSelect"),
     loadPresetBtn: document.getElementById("loadPresetBtn"),
     deletePresetBtn: document.getElementById("deletePresetBtn"),
@@ -36,6 +43,8 @@
     methodId: localStorage.getItem(LAST_METHOD_KEY) || METHODS[0].id,
     params: {},
   };
+
+  let timer = { running: false, startEpoch: null, accumulatedMs: 0 };
 
   function safeParse(json, fallback) {
     try {
@@ -89,11 +98,48 @@
     return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(digits);
   }
 
+  function splitHM(totalMin) {
+    let h = Math.floor(totalMin / 60);
+    let m = Math.round(totalMin - h * 60);
+    if (m === 60) { m = 0; h += 1; }
+    return { h, m };
+  }
+
   function fmtHM(totalMin) {
-    const h = Math.floor(totalMin / 60);
-    const m = Math.round(totalMin % 60);
+    const { h, m } = splitHM(totalMin);
     if (h <= 0) return `${m}min`;
     return `${h}h${String(m).padStart(2, "0")}min`;
+  }
+
+  function fmtClock(totalSeconds) {
+    const s = Math.max(0, Math.round(totalSeconds));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+    return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+  }
+
+  function loadTimer(methodId) {
+    const stored = safeParse(localStorage.getItem(TIMER_KEY(methodId)), null);
+    return stored && typeof stored.accumulatedMs === "number"
+      ? { running: !!stored.running, startEpoch: stored.startEpoch || null, accumulatedMs: stored.accumulatedMs }
+      : { running: false, startEpoch: null, accumulatedMs: 0 };
+  }
+
+  function saveTimer() {
+    localStorage.setItem(TIMER_KEY(state.methodId), JSON.stringify(timer));
+  }
+
+  function timerElapsedMs() {
+    return timer.running ? Date.now() - timer.startEpoch : timer.accumulatedMs;
+  }
+
+  function currentStepIndex(rows, elapsedMin) {
+    for (let i = 0; i < rows.length; i++) {
+      if (elapsedMin < rows[i].totalMin - 1e-6) return i;
+    }
+    return Math.max(0, rows.length - 1);
   }
 
   function tempColor(t) {
@@ -131,6 +177,7 @@
   function switchMethod(id) {
     state.methodId = id;
     state.params = loadCurrentParams(id);
+    timer = loadTimer(id);
     localStorage.setItem(LAST_METHOD_KEY, id);
     renderTabs();
     renderForm();
@@ -193,6 +240,8 @@
     const method = getMethod(state.methodId);
     const rows = computeSchedule(method, state.params);
     const total = rows.length ? rows[rows.length - 1].totalMin : 0;
+    state.rows = rows;
+    state.total = total;
 
     el.totalTime.innerHTML = `${fmtHM(total)} <span>tempo total de processo</span>`;
     el.stepCount.textContent = String(rows.length);
@@ -201,16 +250,38 @@
     const boilTemps = rows.map((r) => r.boil).filter((v) => v !== null && v !== undefined);
     el.peakBoilTemp.textContent = boilTemps.length ? `${fmtNum(Math.max(...boilTemps))}°C` : "–";
 
-    renderLadder(rows);
-    renderChart(rows, state.params);
+    const elapsedMin = timerElapsedMs() / 60000;
+    const clampedElapsed = Math.max(0, Math.min(elapsedMin, total));
+    const activeIndex = rows.length ? currentStepIndex(rows, clampedElapsed) : -1;
+    const finished = total > 0 && elapsedMin >= total - 1e-6;
+
+    renderLadder(rows, activeIndex);
+    renderChart(rows, state.params, total > 0 ? clampedElapsed : null);
+    renderTimerUI(rows, activeIndex, finished);
   }
 
-  function renderLadder(rows) {
+  function renderTimerUI(rows, activeIndex, finished) {
+    el.timerClock.textContent = fmtClock(timerElapsedMs() / 1000);
+    el.timerPanel.classList.toggle("is-running", timer.running);
+    el.timerToggleBtn.textContent = timer.running ? "Pausar" : (timer.accumulatedMs > 0 ? "Continuar" : "Iniciar");
+    if (finished) {
+      el.timerStepLabel.innerHTML = `<strong>Programa concluído</strong>`;
+    } else if (rows.length && activeIndex >= 0) {
+      const row = rows[activeIndex];
+      const remainingMin = Math.max(0, row.totalMin - timerElapsedMs() / 60000);
+      el.timerStepLabel.innerHTML = `Etapa atual: <strong>${row.label}</strong> · faltam ${fmtNum(remainingMin)} min`;
+    } else {
+      el.timerStepLabel.textContent = "Pronto para começar";
+    }
+  }
+
+  function renderLadder(rows, activeIndex) {
     el.ladder.innerHTML = "";
-    let prevTime = 0;
-    for (const r of rows) {
+    rows.forEach((r, i) => {
       const row = document.createElement("div");
       row.className = "ladder-row";
+      if (i === activeIndex) row.classList.add("is-active");
+      else if (activeIndex >= 0 && i < activeIndex) row.classList.add("is-done");
 
       const rail = document.createElement("div");
       rail.className = "ladder-rail";
@@ -243,14 +314,39 @@
       row.appendChild(time);
       row.appendChild(temp);
       el.ladder.appendChild(row);
-      prevTime = r.totalMin;
-    }
-    void prevTime;
+    });
   }
 
-  function renderChart(rows, params) {
-    const W = 640, H = 200;
-    const padL = 34, padR = 10, padT = 12, padB = 22;
+  function fmtAxisTime(t) {
+    const { h, m } = splitHM(t);
+    return h <= 0 ? `${m}m` : `${h}h${String(m).padStart(2, "0")}`;
+  }
+
+  function changePoints(pts) {
+    const out = [];
+    for (let i = 0; i < pts.length; i++) {
+      if (i === 0 || Math.abs(pts[i].v - pts[i - 1].v) > 0.01) out.push(pts[i]);
+    }
+    return out;
+  }
+
+  function valueAt(pts, t) {
+    if (!pts.length) return null;
+    if (t <= pts[0].t) return pts[0].v;
+    if (t >= pts[pts.length - 1].t) return pts[pts.length - 1].v;
+    for (let i = 1; i < pts.length; i++) {
+      if (t <= pts[i].t) {
+        const p0 = pts[i - 1], p1 = pts[i];
+        const f = p1.t === p0.t ? 0 : (t - p0.t) / (p1.t - p0.t);
+        return p0.v + (p1.v - p0.v) * f;
+      }
+    }
+    return pts[pts.length - 1].v;
+  }
+
+  function renderChart(rows, params, elapsedMin) {
+    const W = 640, H = 218;
+    const padL = 34, padR = 12, padT = 14, padB = 40;
     const total = rows.length ? rows[rows.length - 1].totalMin : 1;
 
     const mashPts = [{ t: 0, v: params.mashInTemp }];
@@ -277,15 +373,64 @@
       );
     }
 
-    const timeLabels = [0, total / 2, total].map(
-      (t) => `<text x="${x(t).toFixed(1)}" y="${H - 6}" text-anchor="${t === 0 ? "start" : t === total ? "end" : "middle"}" style="font-size:9px;fill:var(--text-dim);font-family:var(--font-data)">${fmtHM(t)}</text>`
-    );
+    const mashChanges = changePoints(mashPts);
+    const boilChanges = changePoints(boilPts);
+
+    const axisBaseY = H - padB;
+    const rawTickTimes = [...new Set([0, total, ...mashChanges.map((p) => p.t), ...boilChanges.map((p) => p.t)])].sort((a, b) => a - b);
+
+    // Evita rótulos colados: descarta ticks a menos de 16px do último mantido (sempre guarda o primeiro e o último).
+    const tickTimes = [];
+    let lastPx = -Infinity;
+    rawTickTimes.forEach((t, i) => {
+      const px = x(t);
+      const isEdge = i === 0 || i === rawTickTimes.length - 1;
+      if (isEdge || px - lastPx >= 16) {
+        tickTimes.push(t);
+        lastPx = px;
+      }
+    });
+
+    const ticks = tickTimes.map((t) => {
+      const px = x(t).toFixed(1);
+      return (
+        `<line x1="${px}" y1="${axisBaseY.toFixed(1)}" x2="${px}" y2="${(axisBaseY + 4).toFixed(1)}" style="stroke:var(--text-dim);stroke-width:1" />` +
+        `<text x="${px}" y="${(axisBaseY + 13).toFixed(1)}" text-anchor="end" transform="rotate(-50 ${px} ${(axisBaseY + 13).toFixed(1)})" style="font-size:8px;fill:var(--text-dim);font-family:var(--font-data)">${fmtAxisTime(t)}</text>`
+      );
+    });
+
+    const guides = tickTimes.filter((t) => t !== 0 && t !== total).map((t) => {
+      const px = x(t).toFixed(1);
+      return `<line x1="${px}" y1="${padT}" x2="${px}" y2="${axisBaseY.toFixed(1)}" style="stroke:var(--line);stroke-width:1;stroke-dasharray:2,3" />`;
+    });
+
+    const markers = (pts, color) => pts.map((p) => {
+      const px = x(p.t).toFixed(1);
+      const py = y(p.v).toFixed(1);
+      return `<circle cx="${px}" cy="${py}" r="3" style="fill:${color};stroke:var(--surface);stroke-width:1.5"><title>${fmtAxisTime(p.t)} · ${fmtNum(p.v)}°C</title></circle>`;
+    }).join("");
+
+    let playhead = "";
+    if (elapsedMin !== null && elapsedMin !== undefined) {
+      const px = x(elapsedMin).toFixed(1);
+      const mashPy = y(valueAt(mashPts, elapsedMin)).toFixed(1);
+      playhead = `<line x1="${px}" y1="${padT}" x2="${px}" y2="${axisBaseY.toFixed(1)}" style="stroke:var(--amber);stroke-width:1.5px;stroke-dasharray:4,2" />` +
+        `<circle cx="${px}" cy="${mashPy}" r="4.5" style="fill:var(--amber);stroke:var(--surface);stroke-width:1.5" />`;
+      if (boilPts.length && elapsedMin >= boilPts[0].t && elapsedMin <= boilPts[boilPts.length - 1].t) {
+        const boilPy = y(valueAt(boilPts, elapsedMin)).toFixed(1);
+        playhead += `<circle cx="${px}" cy="${boilPy}" r="4.5" style="fill:var(--amber);stroke:var(--surface);stroke-width:1.5" />`;
+      }
+    }
 
     el.chart.innerHTML = `
       ${gridLines.join("")}
+      ${guides.join("")}
       <path d="${pathFor(mashPts)}" fill="none" style="stroke:var(--steel);stroke-width:2.5px" stroke-linejoin="round" />
       ${boilPts.length ? `<path d="${pathFor(boilPts)}" fill="none" style="stroke:var(--copper);stroke-width:2.5px" stroke-linejoin="round" />` : ""}
-      ${timeLabels.join("")}
+      ${markers(mashChanges, "var(--steel)")}
+      ${markers(boilChanges, "var(--copper)")}
+      ${ticks.join("")}
+      ${playhead}
     `;
   }
 
@@ -353,6 +498,41 @@
     toast("Parâmetros restaurados ao padrão.");
   });
 
+  el.timerToggleBtn.addEventListener("click", () => {
+    if (timer.running) {
+      timer.accumulatedMs = timerElapsedMs();
+      timer.running = false;
+      timer.startEpoch = null;
+    } else {
+      timer.startEpoch = Date.now() - timer.accumulatedMs;
+      timer.running = true;
+    }
+    saveTimer();
+    renderResults();
+  });
+
+  el.timerResetBtn.addEventListener("click", () => {
+    timer = { running: false, startEpoch: null, accumulatedMs: 0 };
+    saveTimer();
+    renderResults();
+  });
+
+  el.timerNextBtn.addEventListener("click", () => {
+    const rows = state.rows || [];
+    if (!rows.length) return;
+    const elapsedMin = timerElapsedMs() / 60000;
+    const idx = currentStepIndex(rows, Math.max(0, Math.min(elapsedMin, state.total)));
+    const targetMs = rows[idx].totalMin * 60000;
+    timer.accumulatedMs = targetMs;
+    if (timer.running) timer.startEpoch = Date.now() - targetMs;
+    saveTimer();
+    renderResults();
+  });
+
+  setInterval(() => {
+    if (timer.running) renderResults();
+  }, 500);
+
   el.exportBtn.addEventListener("click", () => {
     const currentByMethod = {};
     for (const m of METHODS) currentByMethod[m.id] = loadCurrentParams(m.id);
@@ -408,6 +588,7 @@
 
   function init() {
     state.params = loadCurrentParams(state.methodId);
+    timer = loadTimer(state.methodId);
     renderTabs();
     renderForm();
     renderPresetOptions();
