@@ -1,4 +1,4 @@
-const CACHE_VERSION = "decoccao-v2";
+const CACHE_VERSION = "decoccao-v3";
 const ASSETS = [
   "./",
   "./index.html",

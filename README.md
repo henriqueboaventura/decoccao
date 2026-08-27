@@ -5,7 +5,10 @@ ferramenta usável no celular ou no computador, sem depender de Excel.
 
 ## O que faz
 
-- 4 métodos de mostura: **Simples**, **Dupla Tradicional**, **Dupla Moderna** e **Tripla Tradicional**.
+- 6 métodos de mostura: **Simples**, **Dupla Tradicional**, **Dupla Moderna**,
+  **Hochkurz**, **Dupla Aprimorada** e **Tripla Tradicional** — os dois
+  últimos cruzados com o [Braukaiser Wiki de decocção](https://www.hboaventura.com/braukaiser-wiki/pages/Decoction_Mashing.html)
+  para preencher métodos que faltavam.
 - Todos os parâmetros da planilha (temperaturas, tempos de rampa, taxa de
   aquecimento, tempos de transferência etc.) ficam editáveis em formulário.
 - A tabela de passo a passo, o tempo total e o gráfico de temperatura x tempo
@@ -47,6 +50,23 @@ tempo próprio da 3ª decocção que já existia na planilha, não utilizado
 (célula `C30`, 5 min). Esse app usa o valor correto (5 min, editável no
 campo "Tempo da 3ª decocção"), o que reduz o tempo total desse método em
 5 minutos frente à planilha original.
+
+A "Simples" foi ajustada para seguir o "Single Decoction" do Braukaiser
+Wiki (rampa de proteína 53-55°C → decocção leva a mostura à rampa de
+sacarificação 65-68°C, ~45min → aquecimento direto até o mash-out),
+diferente da versão original da planilha (que usava rampas de β/α-amilase
+a 62/72°C).
+
+## Métodos cruzados com o Braukaiser Wiki
+
+- **Hochkurz**: mostura já "alta" (dough-in a ~62°C, sem rampa de
+  proteína), 1ª decocção leva ao patamar de dextrinização (70-72°C,
+  descanso de até 60min), 2ª decocção vai direto ao mash-out. Reaproveita
+  o mesmo motor das Duplas, só com defaults diferentes.
+- **Dupla Aprimorada** (Enhanced Double Decoction): rampa ácida inicial,
+  1ª decocção maior (50-60% do lote) devolvida em **duas adições
+  parciais** — a primeira leva a mostura à rampa de proteína, a segunda à
+  sacarificação — e uma 2ª decocção menor leva direto ao mash-out.
 
 ## Deploy (GitHub Pages)
 

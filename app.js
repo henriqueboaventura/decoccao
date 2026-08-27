@@ -349,7 +349,8 @@
     const padL = 34, padR = 12, padT = 14, padB = 40;
     const total = rows.length ? rows[rows.length - 1].totalMin : 1;
 
-    const mashPts = [{ t: 0, v: params.mashInTemp }];
+    const initialMashTemp = rows.length ? rows[0].mash : params.mashInTemp;
+    const mashPts = [{ t: 0, v: initialMashTemp }];
     for (const r of rows) mashPts.push({ t: r.totalMin, v: r.mash });
 
     const boilPts = [];
