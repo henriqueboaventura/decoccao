@@ -32,6 +32,7 @@
     importBtn: document.getElementById("importBtn"),
     importFile: document.getElementById("importFile"),
     autosaveNote: document.getElementById("autosaveNote"),
+    chartTooltip: document.getElementById("chartTooltip"),
     saveModal: document.getElementById("saveModal"),
     presetNameInput: document.getElementById("presetNameInput"),
     cancelSaveBtn: document.getElementById("cancelSaveBtn"),
@@ -45,6 +46,10 @@
   };
 
   let timer = { running: false, startEpoch: null, accumulatedMs: 0 };
+  let chartGeom = null;
+  let hoverT = null;
+  let lastClientX = 0;
+  let lastClientY = 0;
 
   function safeParse(json, fallback) {
     try {
@@ -309,10 +314,17 @@
         : `<span class="temp-pill temp-pill--empty">—</span>`;
       temp.innerHTML = mashPill + " " + boilPill;
 
+      const volume = document.createElement("div");
+      volume.className = "ladder-volume";
+      if (r.decoctionVolumeL !== undefined) {
+        volume.innerHTML = `<span class="temp-pill temp-pill--volume">puxar ≈${fmtNum(r.decoctionVolumeL)}L</span><small>${Math.round(r.decoctionFraction * 100)}% do volume</small>`;
+      }
+
       row.appendChild(rail);
       row.appendChild(label);
       row.appendChild(time);
       row.appendChild(temp);
+      row.appendChild(volume);
       el.ladder.appendChild(row);
     });
   }
@@ -433,7 +445,94 @@
       ${ticks.join("")}
       ${playhead}
     `;
+
+    chartGeom = { rows, mashPts, boilPts, total, padL, padR, padT, padB, W, H, tMin, tMax };
+    if (hoverT !== null) paintChartHover();
   }
+
+  function chartXFromT(t) {
+    return chartGeom.padL + (chartGeom.total > 0 ? (t / chartGeom.total) * (chartGeom.W - chartGeom.padL - chartGeom.padR) : 0);
+  }
+
+  function chartYFromV(v) {
+    return chartGeom.H - chartGeom.padB - ((v - chartGeom.tMin) / (chartGeom.tMax - chartGeom.tMin || 1)) * (chartGeom.H - chartGeom.padT - chartGeom.padB);
+  }
+
+  function chartTFromX(px) {
+    const span = chartGeom.W - chartGeom.padL - chartGeom.padR;
+    if (span <= 0) return 0;
+    const t = ((px - chartGeom.padL) / span) * chartGeom.total;
+    return Math.max(0, Math.min(chartGeom.total, t));
+  }
+
+  function positionChartTooltip() {
+    const panel = el.chart.parentElement;
+    const panelRect = panel.getBoundingClientRect();
+    const tw = el.chartTooltip.offsetWidth;
+    const th = el.chartTooltip.offsetHeight;
+    let left = lastClientX - panelRect.left + 14;
+    let top = lastClientY - panelRect.top - th - 14;
+    if (left + tw > panelRect.width - 4) left = lastClientX - panelRect.left - tw - 14;
+    if (left < 4) left = 4;
+    if (top < 4) top = lastClientY - panelRect.top + 14;
+    el.chartTooltip.style.left = `${left}px`;
+    el.chartTooltip.style.top = `${top}px`;
+  }
+
+  function paintChartHover() {
+    const oldLayer = document.getElementById("chartHoverLayer");
+    if (oldLayer) oldLayer.remove();
+
+    if (!chartGeom || hoverT === null || !chartGeom.rows.length) {
+      el.chartTooltip.hidden = true;
+      return;
+    }
+
+    const { rows, mashPts, boilPts } = chartGeom;
+    const row = rows[currentStepIndex(rows, hoverT)];
+    const mashV = valueAt(mashPts, hoverT);
+    const inBoilRange = boilPts.length && hoverT >= boilPts[0].t && hoverT <= boilPts[boilPts.length - 1].t;
+    const boilV = inBoilRange ? valueAt(boilPts, hoverT) : null;
+
+    const px = chartXFromT(hoverT).toFixed(1);
+    const axisBaseY = chartGeom.H - chartGeom.padB;
+    const overlay =
+      `<g id="chartHoverLayer">` +
+      `<line x1="${px}" y1="${chartGeom.padT}" x2="${px}" y2="${axisBaseY.toFixed(1)}" style="stroke:var(--text-dim);stroke-width:1px;stroke-dasharray:3,3" />` +
+      `<circle cx="${px}" cy="${chartYFromV(mashV).toFixed(1)}" r="4" style="fill:var(--steel);stroke:var(--surface);stroke-width:1.5" />` +
+      (boilV !== null ? `<circle cx="${px}" cy="${chartYFromV(boilV).toFixed(1)}" r="4" style="fill:var(--copper);stroke:var(--surface);stroke-width:1.5" />` : "") +
+      `</g>`;
+    el.chart.insertAdjacentHTML("beforeend", overlay);
+
+    el.chartTooltip.innerHTML =
+      `<strong>${row.label}</strong>` +
+      `<span>${fmtHM(hoverT)}</span>` +
+      `<span>Mostura: ${fmtNum(mashV)}°C</span>` +
+      (boilV !== null ? `<span>Fervura: ${fmtNum(boilV)}°C</span>` : "");
+    el.chartTooltip.hidden = false;
+    positionChartTooltip();
+  }
+
+  function updateChartHover(clientX, clientY) {
+    if (!chartGeom || !chartGeom.rows.length) return;
+    lastClientX = clientX;
+    lastClientY = clientY;
+    const rect = el.chart.getBoundingClientRect();
+    if (rect.width === 0) return;
+    const svgX = (clientX - rect.left) * (chartGeom.W / rect.width);
+    hoverT = chartTFromX(svgX);
+    paintChartHover();
+  }
+
+  function clearChartHover() {
+    hoverT = null;
+    const oldLayer = document.getElementById("chartHoverLayer");
+    if (oldLayer) oldLayer.remove();
+    el.chartTooltip.hidden = true;
+  }
+
+  el.chart.addEventListener("mousemove", (e) => updateChartHover(e.clientX, e.clientY));
+  el.chart.addEventListener("mouseleave", clearChartHover);
 
   function renderPresetOptions() {
     const presets = loadPresets()[state.methodId] || {};
