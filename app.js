@@ -10,6 +10,7 @@
 
   const el = {
     methodTabs: document.getElementById("methodTabs"),
+    methodDescription: document.getElementById("methodDescription"),
     form: document.getElementById("paramsForm"),
     ladder: document.getElementById("ladder"),
     chart: document.getElementById("chart"),
@@ -38,6 +39,8 @@
     cancelSaveBtn: document.getElementById("cancelSaveBtn"),
     confirmSaveBtn: document.getElementById("confirmSaveBtn"),
     toast: document.getElementById("toast"),
+    toastText: document.getElementById("toastText"),
+    toastAction: document.getElementById("toastAction"),
   };
 
   let state = {
@@ -92,11 +95,23 @@
 
   let toastTimer = null;
   function toast(msg) {
-    el.toast.textContent = msg;
+    el.toast.classList.remove("is-update");
+    el.toastAction.hidden = true;
+    el.toastText.textContent = msg;
     el.toast.classList.add("show");
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => el.toast.classList.remove("show"), 2200);
   }
+
+  // Fica visível até o usuário agir (sem timeout), com botão explícito —
+  // diferente do toast() normal, que some sozinho.
+  function showUpdateToast() {
+    clearTimeout(toastTimer);
+    el.toastText.textContent = "Nova versão disponível";
+    el.toastAction.hidden = false;
+    el.toast.classList.add("show", "is-update");
+  }
+  el.toastAction.addEventListener("click", () => location.reload());
 
   function fmtNum(n, digits = 1) {
     const rounded = Math.round(n * Math.pow(10, digits)) / Math.pow(10, digits);
@@ -177,6 +192,14 @@
       btn.addEventListener("click", () => switchMethod(m.id));
       el.methodTabs.appendChild(btn);
     }
+    const newDescription = getMethod(state.methodId).description || "";
+    if (el.methodDescription.textContent !== newDescription) {
+      el.methodDescription.textContent = newDescription;
+      el.methodDescription.classList.add("is-switching");
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => el.methodDescription.classList.remove("is-switching"));
+      });
+    }
   }
 
   function switchMethod(id) {
@@ -188,6 +211,79 @@
     renderForm();
     renderPresetOptions();
     renderResults();
+  }
+
+  // Explicações de apoio (tooltip "?") por parâmetro, resolvidas pela `key`
+  // (estável entre métodos) em vez do `label` (que varia por método). Cada
+  // entrada é testada em ordem — a primeira regra cujo teste bater vence —
+  // então regras mais específicas (ex.: rampas nomeadas) vêm antes das
+  // regras genéricas por grupo.
+  const HINT_RULES = [
+    { test: (p) => p.key === "waterVolume", text: "Volume de água usada na mostura (não inclui a água de lavagem/sparge depois). Junto com a massa de malte, define o volume total estimado da mostura — usado pra calcular quanto puxar em cada decocção." },
+    { test: (p) => p.key === "grainWeight", text: "Massa de malte já moído usada na mostura. Entra no cálculo do volume total da mostura (o grão molhado ocupa espaço além da água, ~0,67L por kg), o que também influencia o volume calculado pra puxar em cada decocção." },
+    { test: (p) => p.key === "mashInTemp", text: "Temperatura da mostura logo depois de misturar a água com o malte moído (Mash In) — o ponto de partida do programa, antes de qualquer rampa ou decocção." },
+    { test: (p) => p.key === "heatingRate", text: "Velocidade de aquecimento considerada pro seu fogo/resistência, em °C por minuto. Usada só pra estimar a duração das etapas de aquecimento — não muda volumes nem temperaturas do programa." },
+    { test: (p) => p.key === "transferTime", text: "Tempo estimado pra transferir a mostura entre a tina de mostura e a tina de fervura, tanto na puxada quanto no retorno da decocção. É só uma referência de tempo; ajuste pro seu equipamento." },
+    { test: (p) => /SaccTemp$/.test(p.key), text: "Temperatura em que a porção puxada descansa, na tina de fervura, antes de ir à fervura plena — dá tempo pras enzimas de conversão de amido agirem nessa fração antes de morrerem na fervura." },
+    { test: (p) => p.key === "saccTime", text: "Duração do descanso de sacarificação da porção puxada, na tina de fervura, antes dela seguir pra fervura plena." },
+    { test: (p) => p.key === "fervuraTemp", text: "Temperatura de fervura da porção puxada — normalmente 100°C. É o valor de referência (Tfervura) usado na fórmula que calcula quanto volume precisa ser puxado em cada decocção." },
+    { test: (p) => p.key === "mashOutTemp", text: "Temperatura alvo de Mash Out — a temperatura final da mostura, atingida pra travar (desnaturar) as enzimas e parar a conversão de amido antes da clarificação/lavagem." },
+    { test: (p) => p.key === "mashOutTime", text: "Duração do descanso na temperatura de Mash Out, ao final da mostura." },
+    { test: (p) => /^decoction\d*Time$/.test(p.key), text: "Duração da fervura desta porção puxada (decocção) na tina de fervura, antes dela voltar e se misturar de novo à mostura." },
+    { test: (p) => /^mashTemp\d+$/.test(p.key), text: "Temperatura alvo da mostura depois que esta porção decoctada volta e se mistura ao restante. É a partir dela que o app calcula quanto volume precisou ser puxado nesta decocção." },
+    { test: (p) => p.key === "acidRestTemp", text: "Temperatura da rampa ácida, logo no Mash In — descanso baixo (Säurerast) que ativa a fitase do malte pra baixar o pH da mostura naturalmente, sem ácido adicionado." },
+    { test: (p) => p.key === "acidRestTime", text: "Duração da rampa ácida — o descanso baixo logo no Mash In que ativa a fitase pra baixar o pH da mostura." },
+    { test: (p) => p.key === "proteinRestTemp", text: "Temperatura alvo depois desta adição da decocção — a rampa de proteína, faixa em que enzimas proteolíticas quebram proteínas grandes em cadeias menores (ajuda espuma e clareza, sem tirar muito corpo)." },
+    { test: (p) => p.key === "proteinRestTime" || /proteina|protease/i.test(p.key), text: "Duração da rampa de proteína — descanso em que enzimas proteolíticas quebram proteínas grandes em cadeias menores, melhorando espuma e clareza da cerveja." },
+    { test: (p) => p.key === "saccRestTemp", text: "Temperatura alvo depois desta adição da decocção — a rampa de sacarificação, faixa em que a alfa-amilase converte o amido restante em açúcares fermentáveis." },
+    { test: (p) => p.key === "dextrinizacaoTemp", text: "Temperatura da rampa de dextrinização — descanso mais quente que favorece a produção de dextrinas (açúcares menos fermentáveis), deixando a cerveja com mais corpo e final menos seco." },
+    { test: (p) => /fitase/i.test(p.key), text: "Duração da rampa de fitase — descanso baixo (~35-45°C) que ativa a enzima fitase do malte, baixando o pH da mostura naturalmente. Comum em programas de decocção tradicionais, pensados pra maltes menos modificados." },
+    { test: (p) => /malto/i.test(p.key), text: "Duração da rampa de maltose — descanso na faixa de ação da beta-amilase, que produz mais açúcares fermentáveis (maltose). Deixa a cerveja com corpo mais leve e final mais seco." },
+    { test: (p) => p.key === "saccRestTime" || /sacc/i.test(p.key), text: "Duração da rampa de sacarificação — descanso em que a alfa-amilase converte o amido em açúcares, definindo corpo e fermentabilidade da cerveja." },
+    { test: (p) => p.group === "Rampas", text: "Duração deste descanso da mostura, na temperatura definida pela etapa anterior, antes do próximo passo do programa." },
+  ];
+
+  function hintFor(p) {
+    const rule = HINT_RULES.find((r) => r.test(p));
+    return rule ? rule.text : null;
+  }
+
+  function closeHints() {
+    document.querySelectorAll(".hint.is-open").forEach((b) => b.classList.remove("is-open"));
+  }
+
+  function makeHintBtn(text) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "hint";
+    btn.textContent = "?";
+    btn.setAttribute("aria-label", "Mais informações");
+    btn.setAttribute("data-tip", text);
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const wasOpen = btn.classList.contains("is-open");
+      closeHints();
+      if (!wasOpen) btn.classList.add("is-open");
+    });
+    return btn;
+  }
+
+  // Texto do tooltip do "puxar" varia por etapa: segue a distinção entre
+  // decocção grossa/rala do Braukaiser Wiki (Decoction Mashing) — puxadas
+  // que ainda vão descansar pra sacarificação (r.restsForConversion) devem
+  // ficar só um pouco mais grossas que a mostura principal (grão sempre
+  // submerso no líquido, senão queima e não mexe direito); a puxada final
+  // de um programa, que já não converte mais amido, pode ser mais rala.
+  function volumeHintText(r) {
+    const base = "Volume estimado a retirar (\"puxar\") da tina de mostura e levar pra fervura nesta decocção. " +
+      "O valor já é o total dessa fração (grão + líquido), calculado pelo balanço de energia entre a temperatura atual e a temperatura alvo após o retorno.";
+    if (r.restsForConversion) {
+      const big = r.decoctionFraction >= 0.4
+        ? " Como é uma fração grande, vale afinar com um pouco de água (5-10% do volume da puxada) antes de ferver, pra facilitar mexer."
+        : "";
+      return base + " Essa puxada ainda vai descansar pra sacarificação antes da fervura, então mantenha-a só um pouco mais grossa que a mostura principal — grão sempre submerso no líquido, nunca seco." + big;
+    }
+    return base + " Essa é a puxada final: a conversão de amido já aconteceu antes dela, então não precisa mais descansar — pode ser puxada mais rala (mais líquida), já que o objetivo aqui é só levá-la à fervura.";
   }
 
   function renderForm() {
@@ -209,9 +305,14 @@
       for (const p of g.fields) {
         const field = document.createElement("div");
         field.className = "field";
+        const labelWrap = document.createElement("div");
+        labelWrap.className = "field__label";
         const label = document.createElement("label");
         label.textContent = p.label;
         label.htmlFor = `p_${p.key}`;
+        labelWrap.appendChild(label);
+        const hintText = hintFor(p);
+        if (hintText) labelWrap.appendChild(makeHintBtn(hintText));
         const control = document.createElement("div");
         control.className = "field__control";
         const input = document.createElement("input");
@@ -223,17 +324,21 @@
         input.value = state.params[p.key];
         input.addEventListener("input", () => {
           const v = parseFloat(input.value);
-          state.params[p.key] = Number.isFinite(v) ? v : p.default;
+          const clamped = Number.isFinite(v) ? Math.min(p.max, Math.max(p.min, v)) : p.default;
+          state.params[p.key] = clamped;
           persistCurrentParams();
           flashAutosave();
           renderResults();
+        });
+        input.addEventListener("blur", () => {
+          input.value = state.params[p.key];
         });
         const unit = document.createElement("span");
         unit.className = "field__unit";
         unit.textContent = p.unit;
         control.appendChild(input);
         control.appendChild(unit);
-        field.appendChild(label);
+        field.appendChild(labelWrap);
         field.appendChild(control);
         wrap.appendChild(field);
       }
@@ -317,7 +422,16 @@
       const volume = document.createElement("div");
       volume.className = "ladder-volume";
       if (r.decoctionVolumeL !== undefined) {
-        volume.innerHTML = `<span class="temp-pill temp-pill--volume">puxar ≈${fmtNum(r.decoctionVolumeL)}L</span><small>${Math.round(r.decoctionFraction * 100)}% do volume</small>`;
+        const pill = document.createElement("span");
+        pill.className = "temp-pill temp-pill--volume";
+        pill.textContent = `puxar ≈${fmtNum(r.decoctionVolumeL)}L`;
+        const hint = makeHintBtn(volumeHintText(r));
+        hint.classList.add("hint--volume");
+        const small = document.createElement("small");
+        small.textContent = `${Math.round(r.decoctionFraction * 100)}% do volume`;
+        volume.appendChild(pill);
+        volume.appendChild(hint);
+        volume.appendChild(small);
       }
 
       row.appendChild(rail);
@@ -686,6 +800,11 @@
     }
   });
 
+  document.addEventListener("click", closeHints);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeHints();
+  });
+
   function init() {
     state.params = loadCurrentParams(state.methodId);
     timer = loadTimer(state.methodId);
@@ -696,7 +815,17 @@
 
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("service-worker.js").catch(() => {});
+        navigator.serviceWorker.register("service-worker.js").then((reg) => {
+          reg.addEventListener("updatefound", () => {
+            const newWorker = reg.installing;
+            if (!newWorker) return;
+            newWorker.addEventListener("statechange", () => {
+              if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+                showUpdateToast();
+              }
+            });
+          });
+        }).catch(() => {});
       });
     }
   }

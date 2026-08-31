@@ -20,6 +20,7 @@
     <span class="brand__tag">Programas de mostura</span>
   </div>
   <div class="method-tabs" id="methodTabs" role="tablist" aria-label="Método de decocção"></div>
+  <p class="method-description" id="methodDescription"></p>
 </header>
 
 <main class="layout">
@@ -88,7 +89,7 @@
   </section>
 </main>
 
-<p class="footer-note">Desenvolvido por Henrique Boaventura e Fábio Koerich · parte do Brassagem Forte</p>
+<p class="footer-note">Desenvolvido por Henrique Boaventura e Fábio Koerich · parte do <a href="https://www.brassagemforte.com.br" target="_blank" rel="noopener">Brassagem Forte</a></p>
 
 <dialog class="modal" id="saveModal">
   <div class="modal__body">
@@ -101,7 +102,10 @@
   </div>
 </dialog>
 
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast">
+  <span class="toast__text" id="toastText"></span>
+  <button class="toast__action" id="toastAction" type="button" hidden>Recarregar</button>
+</div>
 
 <script src="methods.js"></script>
 <script src="app.js"></script>
