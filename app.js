@@ -41,6 +41,7 @@
     toast: document.getElementById("toast"),
     toastText: document.getElementById("toastText"),
     toastAction: document.getElementById("toastAction"),
+    footerVersion: document.getElementById("footerVersion"),
   };
 
   let state = {
@@ -806,6 +807,7 @@
   });
 
   function init() {
+    el.footerVersion.textContent = `v${window.APP_VERSION || "?"}`;
     state.params = loadCurrentParams(state.methodId);
     timer = loadTimer(state.methodId);
     renderTabs();

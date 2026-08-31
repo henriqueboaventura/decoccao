@@ -5,9 +5,9 @@ ferramenta usável no celular ou no computador, sem depender de Excel.
 
 ## O que faz
 
-- 6 métodos de mostura: **Simples**, **Dupla Tradicional**, **Dupla Moderna**,
-  **Hochkurz**, **Dupla Aprimorada** e **Tripla Tradicional** — os dois
-  últimos cruzados com o [Braukaiser Wiki de decocção](https://www.hboaventura.com/braukaiser-wiki/pages/Decoction_Mashing.html)
+- 7 métodos de mostura: **Simples**, **Dupla Tradicional**, **Dupla Moderna**,
+  **Hochkurz**, **Boaventura**, **Dupla Aprimorada** e **Tripla Tradicional**
+  — os três últimos cruzados com o [Braukaiser Wiki de decocção](https://www.hboaventura.com/braukaiser-wiki/pages/Decoction_Mashing.html)
   para preencher métodos que faltavam.
 - Todos os parâmetros da planilha (temperaturas, tempos de rampa, taxa de
   aquecimento, tempos de transferência etc.) ficam editáveis em formulário.
@@ -40,7 +40,16 @@ python3 -m http.server 8080
 - `methods.js` — motor de cálculo: schema de parâmetros + fórmulas de cada
   método, extraídos célula a célula da planilha original.
 - `manifest.webmanifest`, `service-worker.js`, `icons/` — PWA.
+- `version.js` — versão atual do app (única fonte, lida pelo rodapé e pelo
+  service worker). Ver `CHANGELOG.md`.
 - `Cálculos de decocção .xlsx` — planilha original, mantida como referência.
+
+## Versionamento
+
+Segue [SemVer](https://semver.org/lang/pt-BR/). A versão atual está em
+`version.js` e aparece no rodapé do app. Toda mudança relevante vai pro
+`CHANGELOG.md`. Bump de versão troca o nome do cache do service worker
+automaticamente, então nunca precisa lembrar de fazer isso à mão.
 
 ## Nota sobre a planilha original
 

@@ -1,8 +1,14 @@
-const CACHE_VERSION = "decoccao-v4";
+importScripts("version.js");
+// Nome do cache atrelado à versão do app: todo bump de versão troca o nome
+// do cache e força o "activate" abaixo a descartar o cache antigo — não dá
+// pra esquecer de "lembrar" de invalidar, como acontecia antes (ver
+// CHANGELOG.md, item de correção do aviso de atualização).
+const CACHE_VERSION = "decoccao-v" + APP_VERSION;
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
+  "./version.js",
   "./app.js",
   "./methods.js",
   "./manifest.webmanifest",
