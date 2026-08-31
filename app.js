@@ -29,7 +29,7 @@
     timerClock: document.getElementById("timerClock"),
     timerStepLabel: document.getElementById("timerStepLabel"),
     timerToggleBtn: document.getElementById("timerToggleBtn"),
-    timerNextBtn: document.getElementById("timerNextBtn"),
+    timerArriveBtn: document.getElementById("timerArriveBtn"),
     timerResetBtn: document.getElementById("timerResetBtn"),
     presetSelect: document.getElementById("presetSelect"),
     loadPresetBtn: document.getElementById("loadPresetBtn"),
@@ -56,7 +56,15 @@
     params: {},
   };
 
-  let timer = { running: false, startEpoch: null, accumulatedMs: 0 };
+  // Cronômetro por evento: a etapa ativa é `actualStepEndMin.length` — não
+  // mais uma busca por horário no plano estático. Cada elemento é o minuto
+  // real (timerElapsedMs()/60000 no momento do clique) em que o usuário
+  // confirmou ter chegado ao fim daquela etapa, apertando "Cheguei". Isso
+  // resolve de uma vez: etapas de 0min inalcançáveis (não depende mais de
+  // tempo pra avançar), destaque de etapa antes de começar (activeIndex só
+  // existe depois do 1º "Iniciar"), e o plano mudando sob o relógio (editar
+  // parâmetros nunca pula etapa, já que a etapa ativa não depende do plano).
+  let timer = { running: false, startEpoch: null, accumulatedMs: 0, actualStepEndMin: [] };
   let chartGeom = null;
   let hoverT = null;
   let lastClientX = 0;
@@ -150,8 +158,15 @@
   function loadTimer(methodId) {
     const stored = safeParse(localStorage.getItem(TIMER_KEY(methodId)), null);
     return stored && typeof stored.accumulatedMs === "number"
-      ? { running: !!stored.running, startEpoch: stored.startEpoch || null, accumulatedMs: stored.accumulatedMs }
-      : { running: false, startEpoch: null, accumulatedMs: 0 };
+      ? {
+          running: !!stored.running,
+          startEpoch: stored.startEpoch || null,
+          accumulatedMs: stored.accumulatedMs,
+          // Sessões salvas antes desta versão não tinham isso — trata como
+          // "nenhuma etapa confirmada ainda", não perde o relógio corrido.
+          actualStepEndMin: Array.isArray(stored.actualStepEndMin) ? stored.actualStepEndMin : [],
+        }
+      : { running: false, startEpoch: null, accumulatedMs: 0, actualStepEndMin: [] };
   }
 
   function saveTimer() {
@@ -160,6 +175,39 @@
 
   function timerElapsedMs() {
     return timer.running ? Date.now() - timer.startEpoch : timer.accumulatedMs;
+  }
+
+  // undefined = ainda não começou (nenhum "Iniciar" apertado nesta sessão
+  // de brassagem); um número = índice da etapa ativa agora. Nunca aponta
+  // pra além de rows.length (aí o programa está concluído).
+  function timerStarted() {
+    return timer.running || timer.accumulatedMs > 0 || timer.actualStepEndMin.length > 0;
+  }
+  function activeStepIndex(rowsLength) {
+    if (!timerStarted()) return -1;
+    return Math.min(timer.actualStepEndMin.length, rowsLength);
+  }
+
+  // Desloca o plano estático (rows) pelo atraso/adiantamento acumulado até
+  // agora: etapas já confirmadas ganham o horário REAL em que terminaram;
+  // as que faltam mantêm a duração planejada, só que a partir do último
+  // checkpoint real (em vez de acumular a partir do zero). Sem isso, se uma
+  // etapa demorar mais que o previsto, todo o resto do cronograma mostrado
+  // continuaria com os horários originais, como se o atraso não tivesse
+  // acontecido.
+  function effectiveRows(rows) {
+    const activeIndex = timer.actualStepEndMin.length;
+    if (!rows.length || activeIndex === 0) return rows;
+    const baseReal = timer.actualStepEndMin[Math.min(activeIndex, rows.length) - 1];
+    const basePlanned = rows[Math.min(activeIndex, rows.length) - 1].totalMin;
+    const drift = baseReal - basePlanned;
+    let prevTotal = 0;
+    return rows.map((r, i) => {
+      const effTotalMin = i < activeIndex ? timer.actualStepEndMin[i] : r.totalMin + drift;
+      const effRow = { ...r, totalMin: effTotalMin, duration: Math.max(0, effTotalMin - prevTotal) };
+      prevTotal = effTotalMin;
+      return effRow;
+    });
   }
 
   function currentStepIndex(rows, elapsedMin) {
@@ -249,6 +297,8 @@
     state.methodId = id;
     state.params = loadCurrentParams(id);
     timer = loadTimer(id);
+    lastAlarmedIndex = -1;
+    lastAnnouncedStep = undefined;
     localStorage.setItem(LAST_METHOD_KEY, id);
     renderTabs();
     renderForm();
@@ -457,14 +507,38 @@
         : "Este método não puxa decocção."
     );
 
-    const elapsedMin = timerElapsedMs() / 60000;
-    const clampedElapsed = Math.max(0, Math.min(elapsedMin, total));
-    const activeIndex = rows.length ? currentStepIndex(rows, clampedElapsed) : -1;
-    const finished = total > 0 && elapsedMin >= total - 1e-6;
+    const activeIndex = activeStepIndex(rows.length);
+    const finished = activeIndex >= rows.length && rows.length > 0;
+    const displayRows = activeIndex >= 0 ? effectiveRows(rows) : rows;
+    state.displayRows = displayRows;
 
-    renderLadder(rows, activeIndex);
-    renderChart(rows, state.params, total > 0 ? clampedElapsed : null);
+    let nowMin = null;
+    if (activeIndex >= 0) {
+      const cap = displayRows.length ? displayRows[displayRows.length - 1].totalMin : 0;
+      nowMin = Math.max(0, Math.min(timerElapsedMs() / 60000, cap));
+    }
+
+    renderLadder(displayRows, activeIndex);
+    renderChart(displayRows, state.params, nowMin);
+    renderTimerUI(displayRows, activeIndex, finished);
+    maybeAlarm(displayRows, activeIndex, nowMin, finished);
+  }
+
+  // Chamado a cada 500ms enquanto o cronômetro roda: só atualiza o relógio,
+  // o texto "faltam Xmin" e a posição do marcador no gráfico — não recria a
+  // escada nem redesenha o SVG inteiro (era o R1-8 do Raio-X: bateria, e
+  // nada na tela ficava selecionável porque tudo era substituído 2x/s).
+  function tickTimer() {
+    if (!timer.running) return;
+    const rows = state.displayRows || [];
+    const rawLength = state.rows ? state.rows.length : 0;
+    const activeIndex = activeStepIndex(rawLength);
+    const finished = activeIndex >= rawLength && rawLength > 0;
+    const cap = rows.length ? rows[rows.length - 1].totalMin : 0;
+    const nowMin = activeIndex >= 0 ? Math.max(0, Math.min(timerElapsedMs() / 60000, cap)) : null;
     renderTimerUI(rows, activeIndex, finished);
+    updatePlayhead(nowMin);
+    maybeAlarm(rows, activeIndex, nowMin, finished);
   }
 
   let lastAnnouncedStep = undefined;
@@ -472,22 +546,35 @@
     el.timerClock.textContent = fmtClock(timerElapsedMs() / 1000);
     el.timerPanel.classList.toggle("is-running", timer.running);
     el.timerToggleBtn.textContent = timer.running ? "Pausar" : (timer.accumulatedMs > 0 ? "Continuar" : "Iniciar");
-    // A etapa ativa muda raramente; o "faltam Xmin" muda 2x/s (setInterval
-    // em renderResults). Anunciar pro leitor de tela só na virada de etapa
-    // — um aria-live no texto inteiro spammaria "faltam" a cada meio
-    // segundo enquanto o cronômetro roda.
+    el.timerArriveBtn.disabled = !(activeIndex >= 0 && !finished);
+    // A etapa ativa muda raramente; o "faltam Xmin" muda 2x/s (tickTimer).
+    // Anunciar pro leitor de tela só na virada de etapa — um aria-live no
+    // texto inteiro spammaria "faltam" a cada meio segundo.
     const announceKey = finished ? "finished" : (rows.length && activeIndex >= 0 ? activeIndex : null);
     if (announceKey !== lastAnnouncedStep) {
       lastAnnouncedStep = announceKey;
       if (finished) el.srAnnouncer.textContent = "Programa concluído.";
       else if (announceKey !== null) el.srAnnouncer.textContent = `Etapa atual: ${rows[activeIndex].label}.`;
     }
+    // Atraso/adiantamento acumulado: diferença entre o horário REAL do
+    // último "Cheguei" e o horário que o plano original previa pra aquele
+    // ponto. É o que faz o "faltam Xmin" (calculado sobre `rows`, que já
+    // vem deslocado por effectiveRows) refletir o ritmo real da brassagem
+    // em vez do cronograma original, ignorando qualquer atraso — ver R1.
+    const completed = timer.actualStepEndMin.length;
+    const rawRows = state.rows || [];
+    const driftMin = completed > 0 && rawRows[completed - 1]
+      ? timer.actualStepEndMin[completed - 1] - rawRows[completed - 1].totalMin
+      : 0;
+    const driftBadge = Math.abs(driftMin) >= 1
+      ? ` · <span class="timer-drift ${driftMin > 0 ? "is-late" : "is-early"}">${driftMin > 0 ? "+" : ""}${fmtNum(driftMin)}min vs. previsto</span>`
+      : "";
     if (finished) {
-      el.timerStepLabel.innerHTML = `<strong>Programa concluído</strong>`;
+      el.timerStepLabel.innerHTML = `<strong>Programa concluído</strong>${driftBadge}`;
     } else if (rows.length && activeIndex >= 0) {
       const row = rows[activeIndex];
       const remainingMin = Math.max(0, row.totalMin - timerElapsedMs() / 60000);
-      el.timerStepLabel.innerHTML = `Etapa atual: <strong>${row.label}</strong> · faltam ${fmtNum(remainingMin)} min`;
+      el.timerStepLabel.innerHTML = `Etapa atual: <strong>${row.label}</strong> · faltam ${fmtNum(remainingMin)} min${driftBadge}`;
     } else {
       el.timerStepLabel.textContent = "Pronto para começar";
     }
@@ -728,19 +815,6 @@
       return `<circle cx="${px}" cy="${py}" r="3" style="fill:${color};stroke:var(--surface);stroke-width:1.5"><title>${fmtAxisTime(p.t)} · ${fmtNum(p.v)}°C</title></circle>`;
     }).join("");
 
-    let playhead = "";
-    if (elapsedMin !== null && elapsedMin !== undefined) {
-      const px = x(elapsedMin).toFixed(1);
-      const mashPy = y(valueAt(mashPts, elapsedMin)).toFixed(1);
-      playhead = `<line x1="${px}" y1="${padT}" x2="${px}" y2="${axisBaseY.toFixed(1)}" style="stroke:var(--amber);stroke-width:1.5px;stroke-dasharray:4,2" />` +
-        `<circle cx="${px}" cy="${mashPy}" r="4.5" style="fill:var(--amber);stroke:var(--surface);stroke-width:1.5" />`;
-      const activeSegment = segmentAt(boilSegments, elapsedMin);
-      if (activeSegment) {
-        const boilPy = y(valueAt(activeSegment, elapsedMin)).toFixed(1);
-        playhead += `<circle cx="${px}" cy="${boilPy}" r="4.5" style="fill:var(--amber);stroke:var(--surface);stroke-width:1.5" />`;
-      }
-    }
-
     const boilPath = boilSegments.map(pathFor).join(" ");
 
     el.chart.innerHTML = `
@@ -752,11 +826,42 @@
       ${markers(mashChanges, "var(--steel)")}
       ${markers(boilChanges, "var(--copper)")}
       ${ticks.join("")}
-      ${playhead}
     `;
 
+    // Guardado ANTES do playhead: updatePlayhead() (chamado sozinho a cada
+    // tick do cronômetro, sem redesenhar o resto do gráfico) depende disso
+    // já estar pronto pra reconstruir só a camada do marcador.
     chartGeom = { rows, mashPts, boilSegments, total, padL, padR, padT, padB, W, H, tMin, tMax };
+    updatePlayhead(elapsedMin);
     if (hoverT !== null) paintChartHover();
+  }
+
+  // Camada do marcador "Agora" (linha + pontos âmbar), separada do resto do
+  // SVG — assim o tick de 500ms do cronômetro (ver setInterval) só troca
+  // essa camada, sem recriar grade/curvas/eixo inteiros a cada meio segundo
+  // (era o item R1-8 do Raio-X: bateria e nada na tela selecionável).
+  function playheadMarkup(elapsedMin) {
+    if (!chartGeom || elapsedMin === null || elapsedMin === undefined) return "";
+    const { mashPts, boilSegments, padT, H, padB } = chartGeom;
+    const axisBaseY = H - padB;
+    const px = chartXFromT(elapsedMin).toFixed(1);
+    const mashPy = chartYFromV(valueAt(mashPts, elapsedMin)).toFixed(1);
+    let markup = `<g id="playheadLayer">` +
+      `<line x1="${px}" y1="${padT}" x2="${px}" y2="${axisBaseY.toFixed(1)}" style="stroke:var(--amber);stroke-width:1.5px;stroke-dasharray:4,2" />` +
+      `<circle cx="${px}" cy="${mashPy}" r="4.5" style="fill:var(--amber);stroke:var(--surface);stroke-width:1.5" />`;
+    const activeSegment = segmentAt(boilSegments, elapsedMin);
+    if (activeSegment) {
+      const boilPy = chartYFromV(valueAt(activeSegment, elapsedMin)).toFixed(1);
+      markup += `<circle cx="${px}" cy="${boilPy}" r="4.5" style="fill:var(--amber);stroke:var(--surface);stroke-width:1.5" />`;
+    }
+    return markup + "</g>";
+  }
+
+  function updatePlayhead(elapsedMin) {
+    const old = document.getElementById("playheadLayer");
+    if (old) old.remove();
+    const markup = playheadMarkup(elapsedMin);
+    if (markup) el.chart.insertAdjacentHTML("beforeend", markup);
   }
 
   function chartXFromT(t) {
@@ -923,40 +1028,108 @@
     toast("Parâmetros restaurados ao padrão.");
   });
 
+  // Mantém a tela acesa enquanto o cronômetro roda (R1-3) — sem isso a
+  // tela apaga no meio da brassagem, no aparelho usado como cronômetro.
+  // Alguns navegadores recusam sem gesto do usuário ou com a aba em 2º
+  // plano; falha silenciosamente nesse caso (só não trava a tela).
+  let wakeLock = null;
+  async function requestWakeLock() {
+    try {
+      if ("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen");
+    } catch (e) { /* ignora — degrada bem sem travar a tela */ }
+  }
+  function releaseWakeLock() {
+    if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && timer.running && !wakeLock) requestWakeLock();
+  });
+
+  // Alarme sonoro + vibração quando o tempo previsto da etapa atual é
+  // atingido (R1-2) — sem isso o brassador precisa ficar olhando pro
+  // relógio o tempo todo. Um AudioContext só, criado/retomado no primeiro
+  // gesto do usuário (clique em Iniciar/Cheguei) e reaproveitado — criar
+  // um novo a cada alarme arrisca ser bloqueado pela política de autoplay.
+  let audioCtx = null;
+  function ensureAudioCtx() {
+    if (!audioCtx) {
+      const Ctor = window.AudioContext || window.webkitAudioContext;
+      if (Ctor) audioCtx = new Ctor();
+    }
+    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+  }
+  function fireAlarm() {
+    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.35, audioCtx.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.6);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.6);
+  }
+
+  let lastAlarmedIndex = -1;
+  function maybeAlarm(rows, activeIndex, nowMin, finished) {
+    if (!timer.running || finished || activeIndex < 0 || activeIndex >= rows.length) return;
+    if (nowMin !== null && nowMin >= rows[activeIndex].totalMin - 1e-9 && lastAlarmedIndex !== activeIndex) {
+      lastAlarmedIndex = activeIndex;
+      fireAlarm();
+    }
+  }
+
   el.timerToggleBtn.addEventListener("click", () => {
+    ensureAudioCtx(); // gesto do usuário — desbloqueia o alarme sonoro (autoplay)
     if (timer.running) {
       timer.accumulatedMs = timerElapsedMs();
       timer.running = false;
       timer.startEpoch = null;
+      releaseWakeLock();
     } else {
       timer.startEpoch = Date.now() - timer.accumulatedMs;
       timer.running = true;
+      requestWakeLock();
     }
     saveTimer();
     renderResults();
   });
 
   el.timerResetBtn.addEventListener("click", () => {
-    timer = { running: false, startEpoch: null, accumulatedMs: 0 };
+    timer = { running: false, startEpoch: null, accumulatedMs: 0, actualStepEndMin: [] };
+    lastAlarmedIndex = -1;
+    releaseWakeLock();
     saveTimer();
     renderResults();
   });
 
-  el.timerNextBtn.addEventListener("click", () => {
+  // "Cheguei" substitui a antiga "Próxima etapa": em vez de empurrar o
+  // relógio pro horário previsto da próxima etapa (que ignorava atrasos),
+  // registra o minuto REAL em que o usuário confirma ter concluído a etapa
+  // atual. A etapa ativa é só `actualStepEndMin.length` — ver comentário
+  // acima de `activeStepIndex`.
+  el.timerArriveBtn.addEventListener("click", () => {
     const rows = state.rows || [];
-    if (!rows.length) return;
-    const elapsedMin = timerElapsedMs() / 60000;
-    const idx = currentStepIndex(rows, Math.max(0, Math.min(elapsedMin, state.total)));
-    const targetMs = rows[idx].totalMin * 60000;
-    timer.accumulatedMs = targetMs;
-    if (timer.running) timer.startEpoch = Date.now() - targetMs;
+    const activeIndex = activeStepIndex(rows.length);
+    if (activeIndex < 0 || activeIndex >= rows.length) return;
+    ensureAudioCtx();
+    timer.actualStepEndMin.push(timerElapsedMs() / 60000);
+    if (timer.actualStepEndMin.length >= rows.length) {
+      // Confirmou a última etapa: encerra sozinho, em vez de deixar o
+      // relógio correndo pra sempre (era o R1-1 do Raio-X).
+      timer.accumulatedMs = timerElapsedMs();
+      timer.running = false;
+      timer.startEpoch = null;
+      releaseWakeLock();
+    }
     saveTimer();
     renderResults();
   });
 
-  setInterval(() => {
-    if (timer.running) renderResults();
-  }, 500);
+  setInterval(tickTimer, 500);
 
   el.exportBtn.addEventListener("click", () => {
     const currentByMethod = {};

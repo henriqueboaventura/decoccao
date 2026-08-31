@@ -392,6 +392,8 @@ button, select, input {
 .btn--primary:hover { background: var(--copper-strong); border-color: var(--copper-strong); }
 .btn--ghost { background: transparent; }
 .btn--danger:hover { border-color: var(--danger); color: var(--danger); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn:disabled:hover { border-color: var(--line); }
 
 .select-line {
   display: flex;
@@ -480,6 +482,9 @@ button, select, input {
   color: var(--text-dim);
 }
 .timer-step strong { color: var(--amber); font-weight: 600; }
+.timer-drift { font-family: var(--font-data); font-weight: 600; }
+.timer-drift.is-late { color: var(--danger); }
+.timer-drift.is-early { color: var(--steel); }
 
 .timer-controls {
   display: flex;

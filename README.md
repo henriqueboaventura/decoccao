@@ -15,10 +15,13 @@ ferramenta usável no celular ou no computador, sem depender de Excel.
   são recalculados na hora, reproduzindo as fórmulas originais da planilha
   (ver `methods.js`). O gráfico marca cada mudança de temperatura com um
   ponto e o respectivo horário no eixo X.
-- Cronômetro de brassagem: iniciar/pausar/resetar/pular para a próxima etapa,
-  com a etapa atual destacada na lista e uma linha marcando o momento atual
-  no gráfico. O estado do cronômetro é salvo por método e sobrevive a um
-  recarregamento de página (baseado em relógio de parede, não em contador).
+- Cronômetro de brassagem por evento: iniciar/pausar/resetar e confirmar
+  "Cheguei" ao fim real de cada etapa (não um horário previsto) — o resto
+  do cronograma se desloca pelo atraso ou adiantamento acumulado. Etapa
+  atual destacada na lista, marcador no gráfico, alarme (som + vibração)
+  quando o tempo previsto é atingido, tela não apaga sozinha enquanto roda
+  (Wake Lock). Estado salvo por método, sobrevive a um recarregamento de
+  página (baseado em relógio de parede, não em contador).
 - Funciona offline como PWA (Service Worker + manifest) e pode ser instalado
   no celular ou desktop.
 - Salva a configuração atual automaticamente no `localStorage` do navegador.

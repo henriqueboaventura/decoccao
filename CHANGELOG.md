@@ -6,6 +6,45 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 versionamento segue [SemVer](https://semver.org/lang/pt-BR/) (`MAJOR.MINOR.PATCH`).
 A versão atual fica em `version.js` e aparece no rodapé do app.
 
+## [1.5.0] — 2026-08-31
+
+Redesenho do cronômetro (Fase 5 do Raio-X): de "cronômetro comparado a um
+plano fixo" pra rastreador do que realmente está acontecendo na
+brassagem.
+
+### Adicionado
+- Avanço por evento: o botão "Cheguei" substitui "Próxima etapa" e
+  confirma o horário REAL em que cada etapa terminou, em vez de empurrar
+  o relógio pro horário previsto (que ignorava atrasos silenciosamente).
+  A etapa ativa agora é só a contagem de confirmações — não depende mais
+  de comparar o relógio com o plano.
+- O cronograma exibido (escada e gráfico) se desloca pelo atraso ou
+  adiantamento acumulado: se uma etapa demora mais que o previsto, todo o
+  resto do plano mostrado passa a refletir isso, em vez de manter os
+  horários originais como se nada tivesse acontecido.
+- Indicador de atraso/adiantamento acumulado ("+8min vs. previsto") ao
+  lado da etapa atual.
+- Alarme (som + vibração) quando o tempo previsto da etapa atual é
+  atingido — sem precisar ficar olhando pro relógio.
+- Tela não apaga sozinha enquanto o cronômetro roda (Wake Lock API).
+- O relógio para sozinho ao confirmar a última etapa, em vez de continuar
+  contando pra sempre.
+
+### Corrigido
+- Editar qualquer parâmetro durante a contagem podia pular etapa (a etapa
+  ativa dependia de comparar o relógio com o plano, que mudava junto).
+  Agora a etapa ativa só muda quando o usuário confirma via "Cheguei".
+- Etapas de 0 minutos (Mash In, algumas rampas zeradas) eram inalcançáveis
+  pelo avanço automático por tempo. Agora, com avanço manual, são
+  confirmadas normalmente como qualquer outra.
+- Com o relógio em 00:00 antes de "Iniciar", a escada já destacava a 2ª
+  etapa como se o programa tivesse começado. Agora nada é destacado até o
+  primeiro "Iniciar".
+- O `setInterval` de 500ms recriava a escada e o gráfico inteiros a cada
+  tick. Agora só atualiza o relógio, o texto da etapa e a posição do
+  marcador no gráfico — a escada e o SVG completo só são refeitos quando
+  algo realmente muda (parâmetro, confirmação de etapa, troca de método).
+
 ## [1.4.0] — 2026-08-31
 
 ### Adicionado
@@ -155,7 +194,8 @@ de volume.
 - Autosave no `localStorage`, predefinições nomeadas (ocultas da UI por
   ora), exportar/importar configuração em JSON.
 
-[1.4.0]: https://github.com/henriqueboaventura/decoccao/compare/5fd27df...main
+[1.5.0]: https://github.com/henriqueboaventura/decoccao/compare/06eb573...fase-5-cronometro
+[1.4.0]: https://github.com/henriqueboaventura/decoccao/compare/5fd27df...06eb573
 [1.3.0]: https://github.com/henriqueboaventura/decoccao/compare/3bf6b39...5fd27df
 [1.2.0]: https://github.com/henriqueboaventura/decoccao/compare/204aac3...3bf6b39
 [1.1.0]: https://github.com/henriqueboaventura/decoccao/compare/a162452...5e60f93
