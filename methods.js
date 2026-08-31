@@ -73,12 +73,16 @@ function annotateRealPlateauTimes(rows) {
   while (i < rows.length) {
     const temp = rows[i].mash;
     let j = i;
-    let sum = 0;
-    while (j < rows.length && rows[j].mash === temp) {
-      sum += rows[j].duration;
-      j++;
-    }
+    while (j < rows.length && rows[j].mash === temp) j++;
     if (j - i > 1) {
+      // A própria linha i é sempre a chegada naquele patamar — é ela que
+      // faz `mash` virar `temp` (senão o grupo não teria começado ali).
+      // Durante a duração dela a mostura ainda está mudando (aquecendo,
+      // sendo transferida), não parada em `temp` ainda — por isso i não
+      // entra na soma, só i+1..j-1 já estão de fato lá.
+      let sum = 0;
+      for (let k = i + 1; k < j; k++) sum += rows[k].duration;
+
       // Prefere marcar na própria linha "Rampa de X" (o campo que o usuário
       // edita e onde a confusão acontece); sem isso, cai na 1ª linha com
       // duração > 0 do patamar (ex.: Mash In sempre tem duração 0).
@@ -87,7 +91,18 @@ function annotateRealPlateauTimes(rows) {
         if (rows[k].label.startsWith("Rampa ")) { target = k; break; }
         if (target === i && rows[k].duration > 0) target = k;
       }
-      rows[target].realPlateauMin = sum;
+      // Só marca quando sobra tempo de verdade além do que a duração da
+      // própria linha já mostra — senão a única "diferença" era a etapa de
+      // transição (já excluída acima), e o aviso ficaria redundante (ex.:
+      // Mash Out, onde não há decocção nenhuma rodando depois).
+      if (Math.abs(sum - rows[target].duration) > 0.05) {
+        rows[target].realPlateauMin = sum;
+        // Pro texto do tooltip não citar uma sacarificação que não existe
+        // nesse patamar específico (ex.: 2ª decocção do Hochkurz, que vai
+        // direto à fervura — ver N2/restsForConversion).
+        const pullRow = rows.slice(i, j).find((r) => r.pullsDecoction);
+        rows[target].plateauHasSaccRest = pullRow ? !!pullRow.restsForConversion : false;
+      }
     }
     i = j;
   }
@@ -137,6 +152,7 @@ function runSteps(steps, params) {
       pullOriginalMash = prev.mash;
       row.pullsDecoction = true;
       row.restsForConversion = !!step.restsForConversion;
+      row.pullOriginalMash = pullOriginalMash;
     }
     if (step.returnsDecoction && pullIndex !== null) {
       // T1 é sempre a temp. da mostura no momento EXATO da puxada (fixo),
@@ -151,10 +167,41 @@ function runSteps(steps, params) {
       pullRow.returnParts = (pullRow.returnParts || 0) + 1;
       row.returnsDecoction = true;
       row.isFinalReturn = isFinalReturn[idx];
+      row.pullIndex = pullIndex;
     }
 
     prev = { mash, boil: boil !== null ? boil : prev.boil };
   });
+
+  // Quanto volta em CADA adição, quando uma puxada é devolvida em mais de
+  // uma parte (ex.: Dupla Aprimorada) — sem isso o brassador sabe quanto
+  // tirou no total mas não quanto devolver de cada vez (achado N9). Só dá
+  // pra calcular depois que a puxada inteira foi processada: o volume da
+  // 1ª adição depende da fração dela em relação ao que ainda está na tina
+  // NAQUELE momento (não o total original — mesma lógica do C1), e o que
+  // sobra pra tina nesse instante só se sabe conferindo o volume final.
+  rows.forEach((pullRow, pIdx) => {
+    if (!pullRow.pullsDecoction || !(pullRow.returnParts > 1)) return;
+    const tb = num(params.fervuraTemp);
+    let tinaVolumeL = totalMashVolumeL(params) - pullRow.decoctionVolumeL;
+    let tinaTemp = pullRow.pullOriginalMash;
+    let remainingL = pullRow.decoctionVolumeL;
+    const returns = rows.filter((r) => r.pullIndex === pIdx);
+    returns.forEach((r, i) => {
+      if (i === returns.length - 1) {
+        r.returnVolumeL = remainingL; // última adição: o que sobrou da puxada
+        return;
+      }
+      const denom = tb - r.mash;
+      const fraction = denom > 0 ? Math.max(0, Math.min(1, (r.mash - tinaTemp) / denom)) : 0;
+      const addVolumeL = fraction * tinaVolumeL;
+      r.returnVolumeL = addVolumeL;
+      remainingL -= addVolumeL;
+      tinaVolumeL += addVolumeL;
+      tinaTemp = r.mash;
+    });
+  });
+
   return rows;
 }
 
@@ -223,6 +270,16 @@ function buildDupla({
   rampaSaccLabel = "Rampa de sacarificação",
   rampaSaccTimeDefault = 0,
   decoction2TimeDefault = 15,
+  // Dupla Tradicional e Dupla Moderna: a 2ª decocção sacarifica de novo
+  // antes de ferver, igual à 1ª (Narziß, Abriss, p. 152; Brücklmeier,
+  // p. 137). O Hochkurz reaproveita este motor mas é uma fonte diferente
+  // (Narziß, Die Bierbrauerei Band 2, §3.2.4.5, p. 350): a 2ª decocção do
+  // Hochkurz é 1/5-1/4 do lote, direto à fervura, sem repouso — a porção
+  // já está sacarificada de sobra (dextrinização já rodou na tina), então
+  // ferver não custa conversão nenhuma. Aplicar o mesmo repouso aos dois
+  // programas deixava o Hochkurz mais lento que a Dupla Tradicional e a
+  // Tripla, o oposto do que a literatura e o nome do método descrevem.
+  secondDecoctionRests = true,
 }) {
   const paramSchema = [
     { ...G.WATER_VOLUME, default: 20 },
@@ -252,9 +309,11 @@ function buildDupla({
     { label: "Primeira decocção", duration: (p) => p.decoction1Time, mash: sameMash, boil: sameBoil },
     { label: "Transferência Fervura → Mostura", duration: (p) => p.transferTime, mash: (p) => p.mashTemp2, boil: (p) => p.mashTemp2, returnsDecoction: true },
     { label: rampaSaccLabel, duration: (p) => p.rampaSaccTime, mash: sameMash, boil: sameBoil },
-    { label: "Transferência Mostura → Fervura", duration: (p) => p.transferTime, mash: sameMash, boil: sameBoil, pullsDecoction: true, restsForConversion: true },
-    { label: "Aquecimento da 2ª decocção (até a sacarificação)", duration: (p, prev) => (p.decoccao1SaccTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.decoccao1SaccTemp },
-    { label: "Sacarificação da decocção", duration: (p) => p.saccTime, mash: sameMash, boil: sameBoil },
+    { label: "Transferência Mostura → Fervura", duration: (p) => p.transferTime, mash: sameMash, boil: sameBoil, pullsDecoction: true, restsForConversion: secondDecoctionRests },
+    ...(secondDecoctionRests ? [
+      { label: "Aquecimento da 2ª decocção (até a sacarificação)", duration: (p, prev) => (p.decoccao1SaccTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.decoccao1SaccTemp },
+      { label: "Sacarificação da decocção", duration: (p) => p.saccTime, mash: sameMash, boil: sameBoil },
+    ] : []),
     { label: "Aquecimento da 2ª decocção (até a fervura)", duration: (p, prev) => (p.fervuraTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.fervuraTemp },
     { label: "Segunda decocção", duration: (p) => p.decoction2Time, mash: sameMash, boil: sameBoil },
     { label: "Transferência Fervura → Mostura", duration: (p) => p.transferTime, mash: (p) => p.mashOutTemp, boil: (p) => p.mashOutTemp, returnsDecoction: true },
@@ -433,7 +492,12 @@ const hochkurz = buildDupla({
   decoction1TimeDefault: 20,
   rampaSaccLabel: "Rampa de dextrinização",
   rampaSaccTimeDefault: 40,
-  decoction2TimeDefault: 15,
+  // Narziß (Band 2, §3.2.4.5, p. 350) é explícito só sobre a 2ª decocção
+  // do Hochkurz: 5-10min de fervura, sem repouso de sacarificação (a
+  // porção já sai sacarificada da tina). Não fala do tempo da 1ª, que
+  // mantém seu próprio repouso — por isso só a 2ª muda aqui.
+  decoction2TimeDefault: 8,
+  secondDecoctionRests: false,
 });
 const duplaAprimorada = buildDuplaAprimorada();
 const tripla = buildTripla();
@@ -442,10 +506,10 @@ const METHODS = [
   { id: "simples", name: "Simples", description: "Uma decocção só: puxa uma fração da mostura, ferve e devolve pra elevar da sacarificação ao mash-out. O método mais rápido e mais fácil de calibrar.", source: "Braukaiser Wiki — Single Decoction; Kunze, Technology Brewing and Malting, 3ª ed.", ...simples },
   { id: "dupla-tradicional", name: "Dupla Tradicional", description: "Duas decocções: rampa de protease no início, depois duas puxadas que levam a mostura até a sacarificação e até o mash-out.", source: "Kunze, Technology Brewing and Malting, 3ª ed.; Narziß, Abriss der Bierbrauerei, 7ª ed.", ...duplaTradicional },
   { id: "dupla-moderna", name: "Dupla Moderna", description: "Duas decocções com rampa de fitase (Säurerast) no início, pensada pra maltes menos modificados — mesma lógica da Dupla Tradicional, temperaturas iniciais mais baixas.", source: "Narziß, Abriss der Bierbrauerei, 7ª ed. (Säurerast)", ...duplaModerna },
-  { id: "hochkurz", name: "Hochkurz", description: "Duas decocções compactas com rampas de maltose e dextrinização — cerveja com corpo mais leve, tempo total menor que a Dupla clássica.", source: "Narziß, Die Bierbrauerei Band 2, p. 350", ...hochkurz },
+  { id: "hochkurz", name: "Hochkurz", description: "Duas decocções compactas com rampas de maltose e dextrinização — cerveja com corpo mais leve; a 2ª decocção vai direto à fervura, bem mais curta que a 1ª.", source: "Narziß, Die Bierbrauerei Band 2, p. 350", ...hochkurz },
   { id: "boaventura", name: "Boaventura", description: "Rampas de maltose e dextrinização por aquecimento direto na tina; só ao final é puxada uma decocção única, já sacarificada, direto pra fervura.", source: "Autoral (Henrique Boaventura) — variante do Hochkurz, Braukaiser Wiki", ...boaventura },
-  { id: "dupla-aprimorada", name: "Dupla Aprimorada", description: "Uma decocção grande (50-60% do lote) devolvida em duas adições parciais, mais uma decocção menor no fim — o \"Enhanced Double Decoction\" do Braukaiser Wiki.", source: "Braukaiser Wiki — Enhanced Double Decoction", ...duplaAprimorada },
-  { id: "tripla-tradicional", name: "Tripla Tradicional", description: "Três decocções, cada uma puxando cerca de 1/3 da mostura — o método clássico completo, mais longo e com perfil de melanoidinas mais pronunciado.", source: "Narziß, Die Bierbrauerei Band 2, §3.2.4.10 — Dreimaischverfahren", ...tripla },
+  { id: "dupla-aprimorada", name: "Dupla Aprimorada", description: "Uma decocção grande devolvida em duas adições parciais, mais uma decocção menor no fim — o \"Enhanced Double Decoction\" do Braukaiser Wiki.", source: "Braukaiser Wiki — Enhanced Double Decoction", ...duplaAprimorada },
+  { id: "tripla-tradicional", name: "Tripla Tradicional", description: "Três decocções — o método clássico completo, mais longo e com perfil de melanoidinas mais pronunciado.", source: "Narziß, Die Bierbrauerei Band 2, §3.2.4.10 — Dreimaischverfahren", ...tripla },
 ];
 
 function getMethod(id) {

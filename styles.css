@@ -12,6 +12,14 @@
   --steel-strong: #24475c;
   --danger: #a53a2a;
   --focus: #b5602c;
+  /* Faixas de enzima do gráfico (N8): saturadas o bastante pra passar
+     4,5:1 (AA) como TEXTO da legenda contra --surface claro. O preenchimento
+     do SVG usa esses mesmos tons a 14% de opacidade — aí não precisa do
+     mesmo contraste, é só sombreado de fundo, não texto. */
+  --zone-glucanase: #1d4ed8;
+  --zone-protease: #7e22ce;
+  --zone-beta-amilase: #15803d;
+  --zone-alpha-amilase: #92400e;
   --radius: 3px;
   --font-display: "Bahnschrift", "SF Compact Rounded", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
   --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -33,6 +41,10 @@
     --steel-strong: #8fb9d3;
     --danger: #d66a52;
     --focus: #e0a83f;
+    --zone-glucanase: #6495ed;
+    --zone-protease: #ba78d1;
+    --zone-beta-amilase: #6eb26e;
+    --zone-alpha-amilase: #c4a854;
   }
 }
 
@@ -52,6 +64,10 @@
   --steel-strong: #8fb9d3;
   --danger: #d66a52;
   --focus: #e0a83f;
+  --zone-glucanase: #6495ed;
+  --zone-protease: #ba78d1;
+  --zone-beta-amilase: #6eb26e;
+  --zone-alpha-amilase: #c4a854;
 }
 
 [hidden] { display: none !important; }
@@ -246,6 +262,36 @@ button, select, input {
 .param-group { margin-bottom: 1.1rem; }
 .param-group:last-of-type { margin-bottom: 0.6rem; }
 
+.advanced-settings {
+  margin-top: 0.4rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.8rem;
+}
+.advanced-settings summary {
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding-bottom: 0.3rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.advanced-settings summary::-webkit-details-marker { display: none; }
+.advanced-settings summary::before {
+  content: "▸";
+  color: var(--copper);
+  transition: transform 0.15s;
+}
+.advanced-settings[open] summary::before { transform: rotate(90deg); }
+.advanced-settings summary:hover { color: var(--text); }
+.advanced-settings .param-group { margin-top: 0.9rem; }
+.advanced-settings .param-group:first-of-type { margin-top: 0.9rem; }
+
 .param-group__title {
   font-family: var(--font-display);
   font-size: 0.7rem;
@@ -336,6 +382,19 @@ button, select, input {
 .hint--volume { margin: 0 0.3rem; }
 .hint--volume::after { left: auto; right: 0; }
 
+/* Quando não sobra espaço abaixo do botão, abre pra cima em vez de
+   estourar o painel (medido por JS no clique, ver makeHintBtn). */
+.hint--flip-up::after { top: auto; bottom: 140%; transform: translateY(2px); }
+.hint--flip-up:hover::after, .hint--flip-up.is-open::after, .hint--flip-up:focus-visible::after {
+  transform: translateY(0);
+}
+
+/* Puxada acima de 60% do volume total — nenhum programa publicado vai tão
+   longe (N3). Vermelho sempre visível, não só no hover, pra chamar atenção
+   antes mesmo do clique. */
+.hint--alarm { border-color: var(--danger); color: var(--danger); }
+.hint--alarm::after { border-color: var(--danger); }
+
 .field__control {
   display: flex;
   align-items: center;
@@ -392,6 +451,8 @@ button, select, input {
 .btn--primary:hover { background: var(--copper-strong); border-color: var(--copper-strong); }
 .btn--ghost { background: transparent; }
 .btn--danger:hover { border-color: var(--danger); color: var(--danger); }
+.btn--danger-fill { background: var(--danger); border-color: var(--danger); color: #fff9ef; }
+.btn--danger-fill:hover { background: color-mix(in srgb, var(--danger) 80%, black); border-color: color-mix(in srgb, var(--danger) 80%, black); }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .btn:disabled:hover { border-color: var(--line); }
 
@@ -520,6 +581,10 @@ button, select, input {
   color: var(--text-dim);
 }
 .chart-enzyme-legend span { font-weight: 600; }
+.chart-enzyme-legend .zone-glucanase { color: var(--zone-glucanase); }
+.chart-enzyme-legend .zone-protease { color: var(--zone-protease); }
+.chart-enzyme-legend .zone-beta-amilase { color: var(--zone-beta-amilase); }
+.chart-enzyme-legend .zone-alpha-amilase { color: var(--zone-alpha-amilase); }
 
 .chart-tooltip {
   position: absolute;
@@ -652,6 +717,7 @@ button, select, input {
 .temp-pill--mash { background: color-mix(in srgb, var(--steel) 18%, transparent); color: var(--steel-strong); }
 .temp-pill--boil { background: color-mix(in srgb, var(--copper) 18%, transparent); color: var(--copper-strong); }
 .temp-pill--volume { background: color-mix(in srgb, var(--amber) 22%, transparent); color: var(--amber); font-weight: 700; }
+.temp-pill--return { background: color-mix(in srgb, var(--steel) 22%, transparent); color: var(--steel-strong); }
 .temp-pill--empty { color: var(--text-dim); background: transparent; }
 
 @media (max-width: 620px) {
@@ -701,6 +767,7 @@ dialog.modal::backdrop { background: rgba(10, 8, 5, 0.55); }
   font-size: 1rem;
   margin: 0 0 0.8rem;
 }
+.modal__text { font-size: 0.85rem; color: var(--text-dim); margin: 0 0 0.9rem; }
 .modal__body input[type="text"] {
   width: 100%;
   background: var(--surface-2);

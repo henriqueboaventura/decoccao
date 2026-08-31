@@ -6,6 +6,61 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 versionamento segue [SemVer](https://semver.org/lang/pt-BR/) (`MAJOR.MINOR.PATCH`).
 A versão atual fica em `version.js` e aparece no rodapé do app.
 
+## [1.6.0] — 2026-08-31
+
+Segunda leitura da calculadora: 13 achados (N1-N9 + 4 de UI) verificados
+contra o código e corrigidos, mais o modo avançado.
+
+### Adicionado
+- **Modo avançado**: só "Insumos" (água, malte) fica sempre visível; o
+  resto (Geral, Rampas, Decocções) vai pra trás de "Configurações
+  avançadas", fechado por padrão, com o estado lembrado.
+- Aviso de puxada grande agora tem 3 faixas, não 2: até 50% nada; 50-60%
+  tranquiliza (é o teto real da literatura); acima de 60% ALARMA — nenhum
+  programa publicado vai tão longe, com destaque visual em vermelho (N3).
+- Nas puxadas devolvidas em mais de uma adição (Dupla Aprimorada), cada
+  linha de adição agora mostra "devolver ≈X L" — antes só a puxada total
+  aparecia, sem saber quanto voltar de cada vez (N9).
+- Faixas de enzima do gráfico: legenda dinâmica, só lista o que o método
+  atual realmente atravessa — antes listava as 4 faixas sempre, mesmo em
+  métodos onde alguma não aparece desenhada (N8b).
+
+### Corrigido
+- **[crítico]** Clamp de min/max só protegia quem digitava no teclado —
+  autosave, predefinições e importação de JSON carregavam valores fora de
+  faixa sem validar, ressuscitando os bugs antigos de volume negativo e
+  aquecimento de 0min. Nova `sanitizeParams`, aplicada nos 3 caminhos (N1).
+- **[grave]** O repouso de sacarificação da 2ª decocção (corrigido na
+  v1.4.0 pra Dupla Tradicional/Moderna) tinha sido aplicado também ao
+  Hochkurz por engano — Narziß diz que a 2ª decocção do Hochkurz vai
+  direto à fervura. Isso tinha deixado o Hochkurz mais lento que a Dupla
+  Tradicional e a Tripla, o oposto do que o nome do método promete (N2).
+- Escada e gráfico discordavam da temperatura da panela durante o repouso
+  entre duas adições parciais (Dupla Aprimorada): gráfico dizia 100°,
+  escada dizia 52°. Unificados numa função só (N4).
+- Descrições de método voltaram a ter frações fixas ("50-60%", "cerca de
+  1/3") que contradizem o % calculado real na tela ao lado — e a
+  descrição do Hochkurz ficou literalmente falsa depois do N2. Frações
+  removidas, descrição do Hochkurz reescrita (N5/N6).
+- Tooltip de "tempo real por patamar" contava a etapa de transferência
+  (onde a mostura ainda está mudando de temperatura) como se ela já
+  estivesse no patamar, inflando o número; e citava "sacarificação" mesmo
+  quando aquele patamar não tem nenhuma (ex.: 2ª decocção do Hochkurz,
+  depois do N2). Ambos corrigidos (N7).
+- Cor das faixas de enzima no gráfico reprovava contraste AA no tema
+  claro (2,3-3,1:1 contra o mínimo de 4,5:1) — escolhidas pensando só no
+  tema escuro. Novas cores por variável CSS, uma para cada tema (N8a).
+- Excluir predefinição usava `confirm()` nativo do navegador (tipografia
+  diferente, travava a página); agora usa `<dialog>` estilizado, igual ao
+  de salvar.
+- Botão de tema mostrava só uma letra (A/C/E); agora tem ícones de
+  sol/lua/meia-lua.
+- Tooltips de campo/etapa sempre abriam pra baixo e podiam estourar o
+  painel perto do fim de listas longas; agora abrem pra cima quando falta
+  espaço.
+- JSON exportado gravava só `version: 1` (formato do arquivo); agora
+  também grava `appVersion` com a versão do app no momento da exportação.
+
 ## [1.5.0] — 2026-08-31
 
 Redesenho do cronômetro (Fase 5 do Raio-X): de "cronômetro comparado a um
@@ -194,7 +249,8 @@ de volume.
 - Autosave no `localStorage`, predefinições nomeadas (ocultas da UI por
   ora), exportar/importar configuração em JSON.
 
-[1.5.0]: https://github.com/henriqueboaventura/decoccao/compare/06eb573...fase-5-cronometro
+[1.6.0]: https://github.com/henriqueboaventura/decoccao/compare/93138c9...main
+[1.5.0]: https://github.com/henriqueboaventura/decoccao/compare/06eb573...93138c9
 [1.4.0]: https://github.com/henriqueboaventura/decoccao/compare/5fd27df...06eb573
 [1.3.0]: https://github.com/henriqueboaventura/decoccao/compare/3bf6b39...5fd27df
 [1.2.0]: https://github.com/henriqueboaventura/decoccao/compare/204aac3...3bf6b39

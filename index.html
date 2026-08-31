@@ -82,13 +82,7 @@
       </div>
       <svg id="chart" class="chart-svg" viewBox="0 0 640 218" preserveAspectRatio="none" role="img" aria-label="Curva de temperatura ao longo do tempo"></svg>
       <div class="chart-tooltip" id="chartTooltip" hidden></div>
-      <p class="chart-enzyme-legend">
-        Faixas de enzima (referência, Laus et al. 2022):
-        <span style="color:rgb(100,149,237)">β-glucanase 40-45°</span> ·
-        <span style="color:rgb(186,120,209)">protease 43-57°</span> ·
-        <span style="color:rgb(110,178,110)">β-amilase 60-70°</span> ·
-        <span style="color:rgb(196,168,84)">α-amilase 65-80°</span>
-      </p>
+      <p class="chart-enzyme-legend" id="chartEnzymeLegend"></p>
     </div>
 
     <div class="panel schedule-panel">
@@ -107,6 +101,17 @@
     <div class="modal__actions">
       <button class="btn btn--ghost" id="cancelSaveBtn" type="button">Cancelar</button>
       <button class="btn btn--primary" id="confirmSaveBtn" type="button">Salvar</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog class="modal" id="deleteModal">
+  <div class="modal__body">
+    <p class="modal__title">Excluir predefinição</p>
+    <p class="modal__text" id="deleteModalText"></p>
+    <div class="modal__actions">
+      <button class="btn btn--ghost" id="cancelDeleteBtn" type="button">Cancelar</button>
+      <button class="btn btn--danger-fill" id="confirmDeleteBtn" type="button">Excluir</button>
     </div>
   </div>
 </dialog>

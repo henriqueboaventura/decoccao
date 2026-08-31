@@ -41,10 +41,15 @@
     importFile: document.getElementById("importFile"),
     autosaveNote: document.getElementById("autosaveNote"),
     chartTooltip: document.getElementById("chartTooltip"),
+    chartEnzymeLegend: document.getElementById("chartEnzymeLegend"),
     saveModal: document.getElementById("saveModal"),
     presetNameInput: document.getElementById("presetNameInput"),
     cancelSaveBtn: document.getElementById("cancelSaveBtn"),
     confirmSaveBtn: document.getElementById("confirmSaveBtn"),
+    deleteModal: document.getElementById("deleteModal"),
+    deleteModalText: document.getElementById("deleteModalText"),
+    cancelDeleteBtn: document.getElementById("cancelDeleteBtn"),
+    confirmDeleteBtn: document.getElementById("confirmDeleteBtn"),
     toast: document.getElementById("toast"),
     toastText: document.getElementById("toastText"),
     toastAction: document.getElementById("toastAction"),
@@ -86,12 +91,27 @@
     localStorage.setItem(PRESETS_KEY, JSON.stringify(presets));
   }
 
+  // Clampa cada campo pro [min,max] do paramSchema, com fallback pro
+  // default quando o valor nem é um número. O clamp do input (evento
+  // "input" em renderForm) só protege quem digita — um valor salvo em
+  // versão antiga do app, uma predefinição, ou um JSON importado de outra
+  // pessoa passa batido por ele e chega direto no motor de cálculo. Único
+  // ponto de saneamento pra todo mundo que lê parâmetros de fora do
+  // teclado: autosave, predefinições e importação de JSON.
+  function sanitizeParams(method, params) {
+    const out = { ...defaultParams(method), ...params };
+    for (const p of method.paramSchema) {
+      const v = Number(out[p.key]);
+      out[p.key] = Number.isFinite(v) ? Math.min(p.max, Math.max(p.min, v)) : p.default;
+    }
+    return out;
+  }
+
   function loadCurrentParams(methodId) {
     const method = getMethod(methodId);
     const stored = safeParse(localStorage.getItem(CURRENT_KEY(methodId)), null);
-    const defaults = defaultParams(method);
-    if (!stored) return defaults;
-    return { ...defaults, ...stored };
+    if (!stored) return defaultParams(method);
+    return sanitizeParams(method, stored);
   }
 
   function persistCurrentParams() {
@@ -342,7 +362,9 @@
   }
 
   function closeHints() {
-    document.querySelectorAll(".hint.is-open").forEach((b) => b.classList.remove("is-open"));
+    document.querySelectorAll(".hint.is-open").forEach((b) => {
+      b.classList.remove("is-open", "hint--flip-up");
+    });
   }
 
   function makeHintBtn(text) {
@@ -356,7 +378,16 @@
       e.stopPropagation();
       const wasOpen = btn.classList.contains("is-open");
       closeHints();
-      if (!wasOpen) btn.classList.add("is-open");
+      if (!wasOpen) {
+        btn.classList.add("is-open");
+        // Não dá pra medir a altura real do tooltip (é um ::after, sem
+        // caixa própria pro DOM consultar) — usa uma estimativa
+        // conservadora de espaço mínimo. Sem isso ele sempre abre pra
+        // baixo e pode estourar o painel (mais um achado do Raio-X).
+        const rect = btn.getBoundingClientRect();
+        const spaceBelow = window.innerHeight - rect.bottom;
+        btn.classList.toggle("hint--flip-up", spaceBelow < 180);
+      }
     });
     return btn;
   }
@@ -381,14 +412,28 @@
   // ficar só um pouco mais grossas que a mostura principal (grão sempre
   // submerso no líquido, senão queima e não mexe direito); a puxada final
   // de um programa, que já não converte mais amido, pode ser mais rala.
+  // 3 faixas, não 2: até 50% não precisa de aviso; de 50-60% o texto
+  // tranquiliza (é o teto que a literatura de fato usa, Braukaiser
+  // enhanced double inclusive); acima de 60% passa a ALARMAR — nenhum
+  // programa publicado vai tão longe, e o texto tranquilizador de antes
+  // ficava idêntico pra 51% ou 78%, o que é enganoso (achado N3).
+  function volumeSeverity(fraction) {
+    if (fraction >= 0.6) return "alarm";
+    if (fraction >= 0.5) return "big";
+    return "normal";
+  }
+
   function volumeHintText(r) {
     const base = "Volume estimado a retirar (\"puxar\") da tina de mostura e levar pra fervura nesta decocção. " +
       "O valor já é o total dessa fração (grão + líquido), calculado pelo balanço de energia entre a temperatura atual e a temperatura alvo após o retorno.";
-    const big = r.decoctionFraction >= 0.5;
+    const severity = volumeSeverity(r.decoctionFraction);
     const waterNote = " Vale afinar com um pouco de água (5-10% do volume da puxada) antes de ferver, pra facilitar mexer.";
+    const alarmNote = " Atenção: essa fração já passa de 60% do volume total da mostura — nenhum programa publicado (nem o \"enhanced double\" do Braukaiser, o mais agressivo que existe) vai tão longe. Acima disso o resto da mostura pode não ter amido/enzima suficiente pra converter sozinho — vale reconferir os parâmetros antes de seguir.";
     if (r.restsForConversion) {
       let text = base + " Essa puxada ainda vai descansar pra sacarificação antes da fervura, então mantenha-a só um pouco mais grossa que a mostura principal — grão sempre submerso no líquido, nunca seco.";
-      if (big) {
+      if (severity === "alarm") {
+        text += alarmNote;
+      } else if (severity === "big") {
         text += r.returnParts > 1
           ? " Essa fração já passa de 50% do volume total da mostura — só é seguro puxar tanto porque a devolução acontece em mais de uma adição (dá tempo pro resto da mostura converter entre uma e outra) e porque essa porção sacarifica sozinha antes de ferver."
           : " Essa fração já passa de 50% do volume total da mostura — só é seguro puxar tanto porque essa porção sacarifica sozinha (tem seu próprio descanso de conversão) antes de ir à fervura.";
@@ -399,7 +444,9 @@
       return text;
     }
     let text = base + " Essa é a puxada final: a conversão de amido já aconteceu antes dela, então não precisa mais descansar — pode ser puxada mais rala (mais líquida), já que o objetivo aqui é só levá-la à fervura.";
-    if (big) {
+    if (severity === "alarm") {
+      text += alarmNote;
+    } else if (severity === "big") {
       text += " Atenção: essa fração passa de 50% do volume total e não tem descanso de conversão próprio nem retorna em parcelas — confirme que o resto da mostura já converteu todo o amido antes de puxar tanto.";
     }
     return text;
@@ -410,12 +457,72 @@
   // principal fica parada nessa mesma temperatura — e esse tempo não
   // aparece em lugar nenhum a não ser aqui.
   function realPlateauHintText(r) {
+    const decoctionSteps = r.plateauHasSaccRest
+      ? "a transferência, o aquecimento, a sacarificação e a fervura da decocção"
+      : "a transferência, o aquecimento e a fervura da decocção"; // sem sacarificação: vai direto à fervura (ex.: 2ª do Hochkurz)
     let text = `O tempo digitado neste campo (${fmtNum(r.duration)} min) é só o repouso desta etapa. ` +
-      `Somando a transferência, o aquecimento, a sacarificação e a fervura da decocção que vêm logo depois — enquanto a mostura principal fica parada a ${fmtNum(r.mash)}°C, sem nada mudando nela —, o tempo REAL que a mostura passa nesse patamar é ${fmtNum(r.realPlateauMin)} min.`;
+      `Somando ${decoctionSteps} que vêm logo depois — enquanto a mostura principal fica parada a ${fmtNum(r.mash)}°C, sem nada mudando nela —, o tempo REAL que a mostura passa nesse patamar é ${fmtNum(r.realPlateauMin)} min.`;
     if (r.mash >= 30 && r.mash <= 45 && r.realPlateauMin > 45) {
       text += " Atenção: mais de 45min entre 30-45°C é a janela de crescimento de bactérias láticas (Sauergut) sem controle — se a intenção não é acidificar de propósito, vale reduzir esse tempo (puxar antes, ou ajustar as temperaturas).";
     }
     return text;
+  }
+
+  // Só "Insumos" (água, malte) fica sempre visível — os outros grupos vão
+  // pra trás de "Configurações avançadas", fechado por padrão. Quem só
+  // quer rodar a receita padrão do método nunca precisa ver temperatura
+  // de rampa, taxa de aquecimento etc.
+  const ADVANCED_OPEN_KEY = `${STORAGE_PREFIX}:advancedOpen`;
+  const ALWAYS_VISIBLE_GROUP = "Insumos";
+
+  function buildParamGroup(g) {
+    const wrap = document.createElement("div");
+    wrap.className = "param-group";
+    const title = document.createElement("p");
+    title.className = "param-group__title";
+    title.textContent = g.name;
+    wrap.appendChild(title);
+    for (const p of g.fields) {
+      const field = document.createElement("div");
+      field.className = "field";
+      const labelWrap = document.createElement("div");
+      labelWrap.className = "field__label";
+      const label = document.createElement("label");
+      label.textContent = p.label;
+      label.htmlFor = `p_${p.key}`;
+      labelWrap.appendChild(label);
+      const hintText = hintFor(p);
+      if (hintText) labelWrap.appendChild(makeHintBtn(hintText));
+      const control = document.createElement("div");
+      control.className = "field__control";
+      const input = document.createElement("input");
+      input.type = "number";
+      input.id = `p_${p.key}`;
+      input.min = p.min;
+      input.max = p.max;
+      input.step = p.step;
+      input.value = state.params[p.key];
+      input.addEventListener("input", () => {
+        const v = parseFloat(input.value);
+        const clamped = Number.isFinite(v) ? Math.min(p.max, Math.max(p.min, v)) : p.default;
+        state.params[p.key] = clamped;
+        persistCurrentParams();
+        flashAutosave();
+        renderResults();
+      });
+      input.addEventListener("blur", () => {
+        input.value = state.params[p.key];
+      });
+      const unit = document.createElement("span");
+      unit.className = "field__unit";
+      unit.textContent = p.unit;
+      control.appendChild(input);
+      control.appendChild(unit);
+      field.appendChild(labelWrap);
+      field.appendChild(control);
+      wrap.appendChild(field);
+    }
+    return wrap;
   }
 
   function renderForm() {
@@ -427,54 +534,23 @@
       if (!g) { g = { name: p.group, fields: [] }; groups.push(g); }
       g.fields.push(p);
     }
+
+    const advancedGroups = groups.filter((g) => g.name !== ALWAYS_VISIBLE_GROUP);
     for (const g of groups) {
-      const wrap = document.createElement("div");
-      wrap.className = "param-group";
-      const title = document.createElement("p");
-      title.className = "param-group__title";
-      title.textContent = g.name;
-      wrap.appendChild(title);
-      for (const p of g.fields) {
-        const field = document.createElement("div");
-        field.className = "field";
-        const labelWrap = document.createElement("div");
-        labelWrap.className = "field__label";
-        const label = document.createElement("label");
-        label.textContent = p.label;
-        label.htmlFor = `p_${p.key}`;
-        labelWrap.appendChild(label);
-        const hintText = hintFor(p);
-        if (hintText) labelWrap.appendChild(makeHintBtn(hintText));
-        const control = document.createElement("div");
-        control.className = "field__control";
-        const input = document.createElement("input");
-        input.type = "number";
-        input.id = `p_${p.key}`;
-        input.min = p.min;
-        input.max = p.max;
-        input.step = p.step;
-        input.value = state.params[p.key];
-        input.addEventListener("input", () => {
-          const v = parseFloat(input.value);
-          const clamped = Number.isFinite(v) ? Math.min(p.max, Math.max(p.min, v)) : p.default;
-          state.params[p.key] = clamped;
-          persistCurrentParams();
-          flashAutosave();
-          renderResults();
-        });
-        input.addEventListener("blur", () => {
-          input.value = state.params[p.key];
-        });
-        const unit = document.createElement("span");
-        unit.className = "field__unit";
-        unit.textContent = p.unit;
-        control.appendChild(input);
-        control.appendChild(unit);
-        field.appendChild(labelWrap);
-        field.appendChild(control);
-        wrap.appendChild(field);
-      }
-      el.form.appendChild(wrap);
+      if (g.name === ALWAYS_VISIBLE_GROUP) el.form.appendChild(buildParamGroup(g));
+    }
+    if (advancedGroups.length) {
+      const details = document.createElement("details");
+      details.className = "advanced-settings";
+      details.open = localStorage.getItem(ADVANCED_OPEN_KEY) === "1";
+      details.addEventListener("toggle", () => {
+        localStorage.setItem(ADVANCED_OPEN_KEY, details.open ? "1" : "0");
+      });
+      const summary = document.createElement("summary");
+      summary.textContent = "Configurações avançadas";
+      details.appendChild(summary);
+      for (const g of advancedGroups) details.appendChild(buildParamGroup(g));
+      el.form.appendChild(details);
     }
   }
 
@@ -510,6 +586,7 @@
     const activeIndex = activeStepIndex(rows.length);
     const finished = activeIndex >= rows.length && rows.length > 0;
     const displayRows = activeIndex >= 0 ? effectiveRows(rows) : rows;
+    annotateDisplayBoil(displayRows, state.params.fervuraTemp);
     state.displayRows = displayRows;
 
     let nowMin = null;
@@ -594,7 +671,7 @@
       rail.setAttribute("aria-hidden", "true");
       const dot = document.createElement("div");
       dot.className = "ladder-dot";
-      const dotTemp = r.boil !== null && r.boil !== undefined ? r.boil : r.mash;
+      const dotTemp = r.displayBoil !== null && r.displayBoil !== undefined ? r.displayBoil : r.mash;
       dot.style.background = tempColor(dotTemp);
       rail.appendChild(dot);
 
@@ -624,8 +701,8 @@
       const mashPill = r.mash !== null && r.mash !== undefined
         ? `<span class="temp-pill temp-pill--mash">${fmtNum(r.mash)}°</span>`
         : `<span class="temp-pill temp-pill--empty">—</span>`;
-      const boilPill = r.boil !== null && r.boil !== undefined
-        ? `<span class="temp-pill temp-pill--boil">${fmtNum(r.boil)}°</span>`
+      const boilPill = r.displayBoil !== null && r.displayBoil !== undefined
+        ? `<span class="temp-pill temp-pill--boil">${fmtNum(r.displayBoil)}°</span>`
         : `<span class="temp-pill temp-pill--empty">—</span>`;
       temp.innerHTML = mashPill + " " + boilPill;
 
@@ -638,11 +715,29 @@
         pill.textContent = `puxar ≈${fmtNum(r.decoctionVolumeL)} L`;
         const hint = makeHintBtn(volumeHintText(r));
         hint.classList.add("hint--volume");
+        if (volumeSeverity(r.decoctionFraction) === "alarm") hint.classList.add("hint--alarm");
         const small = document.createElement("small");
         small.textContent = `${fmtNum(r.decoctionFraction * 100)}% do volume`;
         volume.appendChild(pill);
         volume.appendChild(hint);
         volume.appendChild(small);
+      } else if (r.returnVolumeL !== undefined) {
+        // Quando a mesma puxada volta em mais de uma adição (Dupla
+        // Aprimorada), a linha da puxada só mostra o total — sem isso o
+        // brassador sabia quanto tirou mas não quanto devolver de cada vez
+        // (achado N9).
+        const pullRow = rows[r.pullIndex];
+        const pill = document.createElement("span");
+        pill.className = "temp-pill temp-pill--volume temp-pill--return";
+        pill.textContent = `devolver ≈${fmtNum(r.returnVolumeL)} L`;
+        const hint = makeHintBtn(
+          `Volume desta adição específica — a puxada inteira (${fmtNum(pullRow.decoctionVolumeL)} L) volta em mais de uma vez, ` +
+          "e o resto continua fervendo na panela até a próxima adição (veja o tooltip da puxada). " +
+          `Essa parte é ${fmtNum((r.returnVolumeL / pullRow.decoctionVolumeL) * 100)}% do total puxado.`
+        );
+        hint.classList.add("hint--volume");
+        volume.appendChild(pill);
+        volume.appendChild(hint);
       }
 
       row.appendChild(rail);
@@ -688,15 +783,49 @@
     return segments.find((seg) => t >= seg[0].t && t <= seg[seg.length - 1].t) || null;
   }
 
+  // `r.boil` sozinho não basta pra saber o que mostrar como temperatura da
+  // panela: entre duas adições parciais da mesma puxada (ex.: Dupla
+  // Aprimorada) ele já carrega o alvo da PRÓXIMA adição, embora a panela
+  // ainda tenha decocção fervendo; e depois do retorno final ele continua
+  // carregando esse valor pra sempre (via sameBoil), mesmo com a panela
+  // vazia. `displayBoil` resolve isso uma vez só, pra escada e gráfico
+  // concordarem (achado N4): null quando a panela está vazia de verdade,
+  // fervuraTemp enquanto ainda falta devolver parte da puxada, e r.boil só
+  // no ponto de encontro real (retorno final) e durante o próprio ciclo de
+  // aquecer/ferver a decocção.
+  function annotateDisplayBoil(rows, fervuraTemp) {
+    let kettleActive = false;
+    let waiting = false;
+    for (const r of rows) {
+      if (r.pullsDecoction) { kettleActive = true; waiting = false; }
+      if (kettleActive) {
+        if (r.isFinalReturn) {
+          r.displayBoil = r.boil;
+        } else if (waiting || (r.returnsDecoction && !r.isFinalReturn)) {
+          r.displayBoil = fervuraTemp;
+        } else if (r.boil !== null && r.boil !== undefined) {
+          r.displayBoil = r.boil;
+        } else {
+          r.displayBoil = null;
+        }
+        if (r.returnsDecoction && !r.isFinalReturn) waiting = true;
+      } else {
+        r.displayBoil = null;
+      }
+      if (r.isFinalReturn) { kettleActive = false; waiting = false; }
+    }
+    return rows;
+  }
+
   // Faixas de atuação das principais enzimas da mostura (Laus et al. 2022,
   // medidas em mostura isotérmica), sombreadas no gráfico como referência —
   // não são um alvo prescritivo do programa, só contexto visual pra saber
   // o que a mostura está "fazendo" em cada patamar.
   const ENZYME_ZONES = [
-    { label: "β-glucanase", lo: 40, hi: 45, rgb: "100,149,237" },
-    { label: "Protease", lo: 43, hi: 57, rgb: "186,120,209" },
-    { label: "β-amilase", lo: 60, hi: 70, rgb: "110,178,110" },
-    { label: "α-amilase", lo: 65, hi: 80, rgb: "196,168,84" },
+    { label: "β-glucanase", cls: "zone-glucanase", lo: 40, hi: 45, rgb: "100,149,237" },
+    { label: "Protease", cls: "zone-protease", lo: 43, hi: 57, rgb: "186,120,209" },
+    { label: "β-amilase", cls: "zone-beta-amilase", lo: 60, hi: 70, rgb: "110,178,110" },
+    { label: "α-amilase", cls: "zone-alpha-amilase", lo: 65, hi: 80, rgb: "196,168,84" },
   ];
 
   function renderChart(rows, params, elapsedMin) {
@@ -708,37 +837,23 @@
     const mashPts = [{ t: 0, v: initialMashTemp }];
     for (const r of rows) mashPts.push({ t: r.totalMin, v: r.mash });
 
-    // Segmenta a linha da fervura por puxada: cada segmento vai do momento
-    // em que a decocção é puxada até o retorno FINAL daquela puxada (posso
-    // ter mais de um retorno parcial no meio, ver Dupla Aprimorada). Fora
-    // desses intervalos a panela está vazia, então não desenha nada — em
-    // vez de deixar a linha "descer" pra temperatura da mostura assim que
-    // a 1ª de várias adições parciais retorna (a panela ainda tem metade
-    // da decocção fervendo nesse momento).
+    // Segmenta a linha da fervura por puxada: `r.displayBoil` (calculado
+    // uma vez só em annotateDisplayBoil, compartilhado com a escada — ver
+    // N4) já resolve quando a panela tem decocção de verdade. Aqui só
+    // agrupa as linhas consecutivas com displayBoil preenchido; fora
+    // desses trechos a panela está vazia, então não desenha nada.
     const boilSegments = [];
     let currentSegment = null;
-    let waitingForNextAddition = false; // depois de um retorno NÃO final, até o retorno final daquela puxada
     for (const r of rows) {
-      if (r.pullsDecoction) { currentSegment = []; waitingForNextAddition = false; }
-      if (currentSegment) {
-        if (r.isFinalReturn) {
-          currentSegment.push({ t: r.totalMin, v: r.boil }); // ponto de encontro: panela e mostura convergem
-        } else if (waitingForNextAddition || (r.returnsDecoction && !r.isFinalReturn)) {
-          // Ainda falta devolver parte da puxada — a panela continua com
-          // decocção fervendo, mesmo em etapas "de descanso" da mostura
-          // principal como a Rampa de proteína entre as duas adições.
-          currentSegment.push({ t: r.totalMin, v: params.fervuraTemp });
-        } else if (r.boil !== null && r.boil !== undefined) {
-          currentSegment.push({ t: r.totalMin, v: r.boil });
-        }
-        if (r.returnsDecoction && !r.isFinalReturn) waitingForNextAddition = true;
-      }
-      if (r.isFinalReturn) {
+      if (r.displayBoil !== null && r.displayBoil !== undefined) {
+        if (!currentSegment) currentSegment = [];
+        currentSegment.push({ t: r.totalMin, v: r.displayBoil });
+      } else if (currentSegment) {
         if (currentSegment.length > 1) boilSegments.push(currentSegment);
         currentSegment = null;
-        waitingForNextAddition = false;
       }
     }
+    if (currentSegment && currentSegment.length > 1) boilSegments.push(currentSegment);
     const boilPts = boilSegments.flat();
 
     const allTemps = mashPts.concat(boilPts).map((p) => p.v);
@@ -761,13 +876,22 @@
     const axisFontSize = (8 * textScale).toFixed(1);
     const gridFontSize = (9 * textScale).toFixed(1);
 
+    // A legenda só lista as faixas que o método atual realmente atravessa
+    // — antes era HTML fixo com as 4 sempre, e em 4 dos 7 métodos alguma
+    // faixa listada nunca aparecia desenhada (achado N8b).
+    const visibleZones = [];
     const zoneRects = ENZYME_ZONES.map((z) => {
       const loC = Math.max(z.lo, tMin);
       const hiC = Math.min(z.hi, tMax);
       if (hiC <= loC) return "";
+      visibleZones.push(z);
       const yTop = y(hiC), yBot = y(loC);
       return `<rect x="${padL}" y="${yTop.toFixed(1)}" width="${(W - padL - padR).toFixed(1)}" height="${(yBot - yTop).toFixed(1)}" fill="rgba(${z.rgb},0.14)" />`;
     }).join("");
+    el.chartEnzymeLegend.innerHTML = visibleZones.length
+      ? "Faixas de enzima (referência, Laus et al. 2022): " +
+        visibleZones.map((z) => `<span class="${z.cls}">${z.label} ${z.lo}-${z.hi}°</span>`).join(" · ")
+      : "";
 
     const gridLines = [];
     const gridTemps = [tMin + 5, tMax - 5];
@@ -982,17 +1106,27 @@
     const saved = presets[state.methodId] && presets[state.methodId][name];
     if (!saved) return;
     const method = getMethod(state.methodId);
-    state.params = { ...defaultParams(method), ...saved };
+    state.params = sanitizeParams(method, saved);
     persistCurrentParams();
     renderForm();
     renderResults();
     toast(`Predefinição "${name}" carregada.`);
   });
 
+  // <dialog> estilizado, igual ao de salvar — antes usava confirm() nativo
+  // do navegador: tipografia diferente, idioma do botão fora do nosso
+  // controle, e travava a página inteira até o usuário responder.
   el.deletePresetBtn.addEventListener("click", () => {
     const name = el.presetSelect.value;
     if (!name) return;
-    if (!confirm(`Excluir a predefinição "${name}"?`)) return;
+    el.deleteModalText.textContent = `Excluir a predefinição "${name}"? Essa ação não pode ser desfeita.`;
+    el.deleteModal.showModal();
+  });
+  el.cancelDeleteBtn.addEventListener("click", () => el.deleteModal.close());
+  el.confirmDeleteBtn.addEventListener("click", () => {
+    const name = el.presetSelect.value;
+    el.deleteModal.close();
+    if (!name) return;
     const presets = loadPresets();
     if (presets[state.methodId]) delete presets[state.methodId][name];
     savePresets(presets);
@@ -1136,7 +1270,8 @@
     for (const m of METHODS) currentByMethod[m.id] = loadCurrentParams(m.id);
     const payload = {
       app: "decoccao",
-      version: 1,
+      version: 1, // versão do FORMATO do arquivo (schema), não do app — ver appVersion
+      appVersion: window.APP_VERSION || null,
       exportedAt: new Date().toISOString(),
       currentByMethod,
       presets: loadPresets(),
@@ -1192,13 +1327,19 @@
 
   // Tema: "claro"/"escuro" fixam data-theme (força o resultado, veja o
   // CSS); "sistema" remove o atributo e volta a seguir prefers-color-scheme.
+  // Ícones (sol/lua/meia-lua) em vez de uma letra só — "A"/"C"/"E" não é
+  // adivinhável, e num botão redondo de 30px o hover era a única pista.
   const THEME_CYCLE = ["system", "light", "dark"];
-  const THEME_LABEL = { system: "A", light: "C", dark: "E" };
+  const THEME_ICON = {
+    system: '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 2a6 6 0 0 1 0 12z" fill="currentColor"/></svg>',
+    light: '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="3.5" fill="currentColor"/><g stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><line x1="8" y1="0.5" x2="8" y2="2.3"/><line x1="8" y1="13.7" x2="8" y2="15.5"/><line x1="0.5" y1="8" x2="2.3" y2="8"/><line x1="13.7" y1="8" x2="15.5" y2="8"/><line x1="2.6" y1="2.6" x2="3.9" y2="3.9"/><line x1="12.1" y1="12.1" x2="13.4" y2="13.4"/><line x1="2.6" y1="13.4" x2="3.9" y2="12.1"/><line x1="12.1" y1="3.9" x2="13.4" y2="2.6"/></g></svg>',
+    dark: '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M13 8.5A5.5 5.5 0 1 1 7.5 3a4.3 4.3 0 1 0 5.5 5.5z" fill="currentColor"/></svg>',
+  };
   const THEME_TITLE = { system: "Tema: sistema (clique pra claro)", light: "Tema: claro (clique pra escuro)", dark: "Tema: escuro (clique pra sistema)" };
   function applyTheme(mode) {
     if (mode === "light" || mode === "dark") document.documentElement.setAttribute("data-theme", mode);
     else document.documentElement.removeAttribute("data-theme");
-    el.themeToggle.textContent = THEME_LABEL[mode];
+    el.themeToggle.innerHTML = THEME_ICON[mode];
     el.themeToggle.title = THEME_TITLE[mode];
     el.themeToggle.setAttribute("aria-label", THEME_TITLE[mode]);
   }
