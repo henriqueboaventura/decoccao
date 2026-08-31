@@ -325,6 +325,19 @@
     return text;
   }
 
+  // O campo "Rampa de X" só pede o repouso ADICIONAL desta etapa. Enquanto
+  // a decocção seguinte é puxada, aquecida, sacarifica e ferve, a mostura
+  // principal fica parada nessa mesma temperatura — e esse tempo não
+  // aparece em lugar nenhum a não ser aqui.
+  function realPlateauHintText(r) {
+    let text = `O tempo digitado neste campo (${fmtNum(r.duration)} min) é só o repouso desta etapa. ` +
+      `Somando a transferência, o aquecimento, a sacarificação e a fervura da decocção que vêm logo depois — enquanto a mostura principal fica parada a ${fmtNum(r.mash)}°C, sem nada mudando nela —, o tempo REAL que a mostura passa nesse patamar é ${fmtNum(r.realPlateauMin)} min.`;
+    if (r.mash >= 30 && r.mash <= 45 && r.realPlateauMin > 45) {
+      text += " Atenção: mais de 45min entre 30-45°C é a janela de crescimento de bactérias láticas (Sauergut) sem controle — se a intenção não é acidificar de propósito, vale reduzir esse tempo (puxar antes, ou ajustar as temperaturas).";
+    }
+    return text;
+  }
+
   function renderForm() {
     const method = getMethod(state.methodId);
     el.form.innerHTML = "";
@@ -457,7 +470,17 @@
 
       const label = document.createElement("div");
       label.className = "ladder-label";
-      label.innerHTML = `${r.label}<small>${fmtNum(r.duration)} min · até ${fmtHM(r.totalMin)}</small>`;
+      const labelLine = document.createElement("span");
+      labelLine.className = "ladder-label__line";
+      labelLine.appendChild(document.createTextNode(r.label));
+      if (r.realPlateauMin !== undefined) {
+        const plateauHint = makeHintBtn(realPlateauHintText(r));
+        labelLine.appendChild(plateauHint);
+      }
+      const small = document.createElement("small");
+      small.textContent = `${fmtNum(r.duration)} min · até ${fmtHM(r.totalMin)}`;
+      label.appendChild(labelLine);
+      label.appendChild(small);
 
       const time = document.createElement("div");
       time.className = "ladder-time";

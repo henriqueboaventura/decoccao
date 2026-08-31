@@ -6,6 +6,18 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 versionamento segue [SemVer](https://semver.org/lang/pt-BR/) (`MAJOR.MINOR.PATCH`).
 A versão atual fica em `version.js` e aparece no rodapé do app.
 
+## [1.3.0] — 2026-08-31
+
+### Adicionado
+- Tooltip "?" na linha de cada "Rampa de X", mostrando o tempo REAL que a
+  mostura passa naquele patamar — não só o repouso digitado. Enquanto a
+  decocção é puxada, aquecida, sacarifica e ferve, a mostura principal
+  fica parada na mesma temperatura, e esse tempo (que em alguns programas
+  chega a 4x o valor digitado) não aparecia em lugar nenhum da tela.
+- Alerta específico dentro desse tooltip quando o patamar fica entre
+  30-45°C por mais de 45min: é a janela de crescimento de bactérias
+  láticas (Sauergut) sem controle, então vale confirmar que é intencional.
+
 ## [1.2.0] — 2026-08-31
 
 ### Corrigido
@@ -109,7 +121,8 @@ de volume.
 - Autosave no `localStorage`, predefinições nomeadas (ocultas da UI por
   ora), exportar/importar configuração em JSON.
 
-[1.2.0]: https://github.com/henriqueboaventura/decoccao/compare/204aac3...main
+[1.3.0]: https://github.com/henriqueboaventura/decoccao/compare/3bf6b39...main
+[1.2.0]: https://github.com/henriqueboaventura/decoccao/compare/204aac3...3bf6b39
 [1.1.0]: https://github.com/henriqueboaventura/decoccao/compare/a162452...5e60f93
 [1.0.0]: https://github.com/henriqueboaventura/decoccao/compare/f9b0ed9...a162452
 [0.1.1]: https://github.com/henriqueboaventura/decoccao/compare/12643a4...f9b0ed9

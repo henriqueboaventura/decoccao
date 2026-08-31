@@ -59,6 +59,41 @@ function totalMashVolumeL(params) {
 // ainda precisam converter amido devem ficar só um pouco mais grossas que a
 // mostura principal (grão sempre submerso no líquido); a puxada final de um
 // programa, que já não precisa converter mais nada, pode ser mais rala.
+// O tempo digitado num campo "Rampa de X" é só o repouso ADICIONAL daquela
+// etapa — não o tempo total que a mostura principal passa naquela
+// temperatura. Entre a puxada e o retorno, a mostura fica parada (steps com
+// `mash: sameMash`) enquanto a decocção é transferida, aquecida, sacarifica
+// e ferve, e todo esse tempo se soma ao patamar. Em alguns programas essa
+// diferença chega a 4x o valor digitado. `annotateRealPlateauTimes` marca,
+// na primeira linha de cada patamar de temperatura, o tempo real total
+// (`realPlateauMin`) — só quando o patamar tem mais de uma etapa, senão o
+// real já é igual ao digitado e não há nada a esclarecer.
+function annotateRealPlateauTimes(rows) {
+  let i = 0;
+  while (i < rows.length) {
+    const temp = rows[i].mash;
+    let j = i;
+    let sum = 0;
+    while (j < rows.length && rows[j].mash === temp) {
+      sum += rows[j].duration;
+      j++;
+    }
+    if (j - i > 1) {
+      // Prefere marcar na própria linha "Rampa de X" (o campo que o usuário
+      // edita e onde a confusão acontece); sem isso, cai na 1ª linha com
+      // duração > 0 do patamar (ex.: Mash In sempre tem duração 0).
+      let target = i;
+      for (let k = i; k < j; k++) {
+        if (rows[k].label.startsWith("Rampa ")) { target = k; break; }
+        if (target === i && rows[k].duration > 0) target = k;
+      }
+      rows[target].realPlateauMin = sum;
+    }
+    i = j;
+  }
+  return rows;
+}
+
 function runSteps(steps, params) {
   const rows = [];
   let prev = { mash: null, boil: null };
@@ -404,7 +439,7 @@ function defaultParams(method) {
 }
 
 function computeSchedule(method, params) {
-  return runSteps(method.steps, params);
+  return annotateRealPlateauTimes(runSteps(method.steps, params));
 }
 
 window.Decoccao = { METHODS, getMethod, defaultParams, computeSchedule, totalMashVolumeL };

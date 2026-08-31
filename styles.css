@@ -544,6 +544,11 @@ button, select, input {
   color: var(--text);
   line-height: 1.2;
 }
+.ladder-label__line {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
 .ladder-label small {
   display: block;
   font-size: 0.68rem;
