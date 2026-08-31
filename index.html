@@ -18,25 +18,26 @@
   <div class="brand">
     <span class="brand__mark">Deco<span>c</span>ção</span>
     <span class="brand__tag">Programas de mostura</span>
+    <button class="theme-toggle" id="themeToggle" type="button" aria-label="Alternar tema"></button>
   </div>
   <div class="method-tabs" id="methodTabs" role="tablist" aria-label="Método de decocção"></div>
   <select class="method-select" id="methodSelect" aria-label="Método de decocção"></select>
   <p class="method-description" id="methodDescription"></p>
+  <p class="method-source" id="methodSource"></p>
 </header>
 
-<main class="layout">
+<main class="layout" id="methodPanel" role="tabpanel" aria-label="Programa calculado para o método selecionado">
   <section class="panel params-panel" aria-label="Parâmetros do programa">
     <form id="paramsForm"></form>
     <div class="toolbar">
-      <!-- Predefinições: recurso mantido no app.js, oculto da interface por ora. -->
-      <div class="select-line" hidden>
+      <div class="select-line">
         <select id="presetSelect" aria-label="Predefinições salvas">
           <option value="">Predefinições…</option>
         </select>
         <button class="btn" id="loadPresetBtn" type="button" title="Carregar predefinição">Abrir</button>
         <button class="btn btn--danger" id="deletePresetBtn" type="button" title="Excluir predefinição">✕</button>
       </div>
-      <div class="toolbar__row" hidden>
+      <div class="toolbar__row">
         <button class="btn btn--primary" id="savePresetBtn" type="button">Salvar como…</button>
       </div>
       <div class="toolbar__row">
@@ -81,11 +82,18 @@
       </div>
       <svg id="chart" class="chart-svg" viewBox="0 0 640 218" preserveAspectRatio="none" role="img" aria-label="Curva de temperatura ao longo do tempo"></svg>
       <div class="chart-tooltip" id="chartTooltip" hidden></div>
+      <p class="chart-enzyme-legend">
+        Faixas de enzima (referência, Laus et al. 2022):
+        <span style="color:rgb(100,149,237)">β-glucanase 40-45°</span> ·
+        <span style="color:rgb(186,120,209)">protease 43-57°</span> ·
+        <span style="color:rgb(110,178,110)">β-amilase 60-70°</span> ·
+        <span style="color:rgb(196,168,84)">α-amilase 65-80°</span>
+      </p>
     </div>
 
     <div class="panel schedule-panel">
-      <div class="schedule-title">Passo a passo do programa</div>
-      <div class="ladder" id="ladder"></div>
+      <div class="schedule-title" id="scheduleTitle">Passo a passo do programa</div>
+      <div class="ladder" id="ladder" role="table" aria-labelledby="scheduleTitle"></div>
     </div>
   </section>
 </main>
@@ -102,6 +110,8 @@
     </div>
   </div>
 </dialog>
+
+<div class="sr-only" id="srAnnouncer" role="status" aria-live="polite"></div>
 
 <div class="toast" id="toast">
   <span class="toast__text" id="toastText"></span>

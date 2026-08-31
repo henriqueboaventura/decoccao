@@ -6,6 +6,40 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 versionamento segue [SemVer](https://semver.org/lang/pt-BR/) (`MAJOR.MINOR.PATCH`).
 A versão atual fica em `version.js` e aparece no rodapé do app.
 
+## [1.4.0] — 2026-08-31
+
+### Adicionado
+- Tema manual (claro/escuro/sistema) — botão de 3 estados no cabeçalho,
+  preferência salva no dispositivo.
+- Sombreamento das faixas de atuação das principais enzimas da mostura
+  (β-glucanase 40-45°, protease 43-57°, β-amilase 60-70°, α-amilase
+  65-80°, Laus et al. 2022) no gráfico de temperatura, com legenda —
+  ajuda a entender o que a mostura está "fazendo" em cada patamar.
+- Predefinições (salvar/carregar/excluir programas nomeados) voltam a
+  aparecer na interface — a UI já existia, só estava com `hidden` no HTML.
+- Fonte de cada método (Braukaiser Wiki, Narziß, Kunze etc.) exibida
+  abaixo da descrição, extraída dos comentários que já existiam no código.
+- Tooltip do gráfico agora funciona por toque, não só com mouse.
+- `role="tablist"` completo nas abas de método: `aria-controls` apontando
+  pro conteúdo, navegação por setas/Home/End entre as abas.
+- Semântica de tabela (`role="table/row/rowheader/cell"`) na lista de
+  etapas, pra leitores de tela.
+- Anúncio de virada de etapa do cronômetro pra leitores de tela
+  (`aria-live`, só na transição — não a cada meio segundo do contador).
+
+### Corrigido
+- No gráfico, a linha da fervura (panela) descia pra temperatura da
+  mostura assim que a primeira de várias adições parciais retornava (ex.:
+  Dupla Aprimorada) — mesmo a panela ainda tendo metade da decocção
+  fervendo. Agora ela só "esvazia" (a linha some) depois do retorno FINAL
+  de cada puxada.
+- Texto do eixo do gráfico ficava ilegível (~4px reais) em telas
+  estreitas, porque o SVG escala o texto junto com o resto — agora mede a
+  largura renderizada e compensa, mantendo um tamanho mínimo real.
+- Tipografia pequena (10-11px) e opacidade agressiva (0,55) nas etapas
+  concluídas da lista — risco de contraste real com luvas/vapor/sol.
+  Aumentada a fonte e suavizada a opacidade (0,72).
+
 ## [1.3.0] — 2026-08-31
 
 ### Adicionado
@@ -121,7 +155,8 @@ de volume.
 - Autosave no `localStorage`, predefinições nomeadas (ocultas da UI por
   ora), exportar/importar configuração em JSON.
 
-[1.3.0]: https://github.com/henriqueboaventura/decoccao/compare/3bf6b39...main
+[1.4.0]: https://github.com/henriqueboaventura/decoccao/compare/5fd27df...main
+[1.3.0]: https://github.com/henriqueboaventura/decoccao/compare/3bf6b39...5fd27df
 [1.2.0]: https://github.com/henriqueboaventura/decoccao/compare/204aac3...3bf6b39
 [1.1.0]: https://github.com/henriqueboaventura/decoccao/compare/a162452...5e60f93
 [1.0.0]: https://github.com/henriqueboaventura/decoccao/compare/f9b0ed9...a162452

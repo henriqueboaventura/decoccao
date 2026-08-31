@@ -7,11 +7,15 @@
   const PRESETS_KEY = `${STORAGE_PREFIX}:presets`;
   const LAST_METHOD_KEY = `${STORAGE_PREFIX}:lastMethod`;
   const TIMER_KEY = (id) => `${STORAGE_PREFIX}:timer:${id}`;
+  const THEME_KEY = `${STORAGE_PREFIX}:theme`;
 
   const el = {
     methodTabs: document.getElementById("methodTabs"),
     methodSelect: document.getElementById("methodSelect"),
     methodDescription: document.getElementById("methodDescription"),
+    methodSource: document.getElementById("methodSource"),
+    themeToggle: document.getElementById("themeToggle"),
+    srAnnouncer: document.getElementById("srAnnouncer"),
     form: document.getElementById("paramsForm"),
     ladder: document.getElementById("ladder"),
     chart: document.getElementById("chart"),
@@ -186,13 +190,37 @@
   function renderTabs() {
     el.methodTabs.innerHTML = "";
     for (const m of METHODS) {
+      const isSelected = m.id === state.methodId;
       const btn = document.createElement("button");
       btn.className = "method-tab";
       btn.type = "button";
       btn.role = "tab";
       btn.textContent = m.name;
-      btn.setAttribute("aria-selected", String(m.id === state.methodId));
+      btn.id = `tab_${m.id}`;
+      btn.setAttribute("aria-selected", String(isSelected));
+      btn.setAttribute("aria-controls", "methodPanel");
+      // Roving tabindex: só a aba selecionada é parada de Tab; as setas
+      // (abaixo) movem o foco entre as outras, como o padrão ARIA de
+      // tablist espera.
+      btn.tabIndex = isSelected ? 0 : -1;
       btn.addEventListener("click", () => switchMethod(m.id));
+      btn.addEventListener("keydown", (e) => {
+        const tabs = Array.from(el.methodTabs.querySelectorAll(".method-tab"));
+        const i = tabs.indexOf(btn);
+        let next = null;
+        if (e.key === "ArrowRight") next = tabs[(i + 1) % tabs.length];
+        else if (e.key === "ArrowLeft") next = tabs[(i - 1 + tabs.length) % tabs.length];
+        else if (e.key === "Home") next = tabs[0];
+        else if (e.key === "End") next = tabs[tabs.length - 1];
+        if (next) {
+          e.preventDefault();
+          const nextId = METHODS[tabs.indexOf(next)].id;
+          switchMethod(nextId);
+          // renderTabs() (chamado por switchMethod) recria os botões do
+          // zero — `next` já está fora do DOM aqui, precisa buscar de novo.
+          document.getElementById(`tab_${nextId}`)?.focus();
+        }
+      });
       el.methodTabs.appendChild(btn);
     }
     if (el.methodSelect.options.length !== METHODS.length) {
@@ -205,7 +233,8 @@
       }
     }
     el.methodSelect.value = state.methodId;
-    const newDescription = getMethod(state.methodId).description || "";
+    const method = getMethod(state.methodId);
+    const newDescription = method.description || "";
     if (el.methodDescription.textContent !== newDescription) {
       el.methodDescription.textContent = newDescription;
       el.methodDescription.classList.add("is-switching");
@@ -213,6 +242,7 @@
         requestAnimationFrame(() => el.methodDescription.classList.remove("is-switching"));
       });
     }
+    el.methodSource.textContent = method.source ? `Fonte: ${method.source}` : "";
   }
 
   function switchMethod(id) {
@@ -437,10 +467,21 @@
     renderTimerUI(rows, activeIndex, finished);
   }
 
+  let lastAnnouncedStep = undefined;
   function renderTimerUI(rows, activeIndex, finished) {
     el.timerClock.textContent = fmtClock(timerElapsedMs() / 1000);
     el.timerPanel.classList.toggle("is-running", timer.running);
     el.timerToggleBtn.textContent = timer.running ? "Pausar" : (timer.accumulatedMs > 0 ? "Continuar" : "Iniciar");
+    // A etapa ativa muda raramente; o "faltam Xmin" muda 2x/s (setInterval
+    // em renderResults). Anunciar pro leitor de tela só na virada de etapa
+    // — um aria-live no texto inteiro spammaria "faltam" a cada meio
+    // segundo enquanto o cronômetro roda.
+    const announceKey = finished ? "finished" : (rows.length && activeIndex >= 0 ? activeIndex : null);
+    if (announceKey !== lastAnnouncedStep) {
+      lastAnnouncedStep = announceKey;
+      if (finished) el.srAnnouncer.textContent = "Programa concluído.";
+      else if (announceKey !== null) el.srAnnouncer.textContent = `Etapa atual: ${rows[activeIndex].label}.`;
+    }
     if (finished) {
       el.timerStepLabel.innerHTML = `<strong>Programa concluído</strong>`;
     } else if (rows.length && activeIndex >= 0) {
@@ -457,11 +498,13 @@
     rows.forEach((r, i) => {
       const row = document.createElement("div");
       row.className = "ladder-row";
+      row.setAttribute("role", "row");
       if (i === activeIndex) row.classList.add("is-active");
       else if (activeIndex >= 0 && i < activeIndex) row.classList.add("is-done");
 
       const rail = document.createElement("div");
       rail.className = "ladder-rail";
+      rail.setAttribute("aria-hidden", "true");
       const dot = document.createElement("div");
       dot.className = "ladder-dot";
       const dotTemp = r.boil !== null && r.boil !== undefined ? r.boil : r.mash;
@@ -470,6 +513,7 @@
 
       const label = document.createElement("div");
       label.className = "ladder-label";
+      label.setAttribute("role", "rowheader");
       const labelLine = document.createElement("span");
       labelLine.className = "ladder-label__line";
       labelLine.appendChild(document.createTextNode(r.label));
@@ -484,10 +528,12 @@
 
       const time = document.createElement("div");
       time.className = "ladder-time";
+      time.setAttribute("role", "cell");
       time.innerHTML = `<strong>${fmtNum(r.duration)}</strong> min`;
 
       const temp = document.createElement("div");
       temp.className = "ladder-temp";
+      temp.setAttribute("role", "cell");
       const mashPill = r.mash !== null && r.mash !== undefined
         ? `<span class="temp-pill temp-pill--mash">${fmtNum(r.mash)}°</span>`
         : `<span class="temp-pill temp-pill--empty">—</span>`;
@@ -498,6 +544,7 @@
 
       const volume = document.createElement("div");
       volume.className = "ladder-volume";
+      volume.setAttribute("role", "cell");
       if (r.decoctionVolumeL !== undefined) {
         const pill = document.createElement("span");
         pill.className = "temp-pill temp-pill--volume";
@@ -547,6 +594,24 @@
     return pts[pts.length - 1].v;
   }
 
+  // Segmento (não ponto único) que contém `t`, ou null se `t` cai num
+  // intervalo em que a panela está vazia (entre puxadas). Usado pro hover
+  // e pro playhead não interpolarem por cima do "buraco" entre puxadas.
+  function segmentAt(segments, t) {
+    return segments.find((seg) => t >= seg[0].t && t <= seg[seg.length - 1].t) || null;
+  }
+
+  // Faixas de atuação das principais enzimas da mostura (Laus et al. 2022,
+  // medidas em mostura isotérmica), sombreadas no gráfico como referência —
+  // não são um alvo prescritivo do programa, só contexto visual pra saber
+  // o que a mostura está "fazendo" em cada patamar.
+  const ENZYME_ZONES = [
+    { label: "β-glucanase", lo: 40, hi: 45, rgb: "100,149,237" },
+    { label: "Protease", lo: 43, hi: 57, rgb: "186,120,209" },
+    { label: "β-amilase", lo: 60, hi: 70, rgb: "110,178,110" },
+    { label: "α-amilase", lo: 65, hi: 80, rgb: "196,168,84" },
+  ];
+
   function renderChart(rows, params, elapsedMin) {
     const W = 640, H = 218;
     const padL = 34, padR = 12, padT = 14, padB = 40;
@@ -556,8 +621,38 @@
     const mashPts = [{ t: 0, v: initialMashTemp }];
     for (const r of rows) mashPts.push({ t: r.totalMin, v: r.mash });
 
-    const boilPts = [];
-    for (const r of rows) if (r.boil !== null && r.boil !== undefined) boilPts.push({ t: r.totalMin, v: r.boil });
+    // Segmenta a linha da fervura por puxada: cada segmento vai do momento
+    // em que a decocção é puxada até o retorno FINAL daquela puxada (posso
+    // ter mais de um retorno parcial no meio, ver Dupla Aprimorada). Fora
+    // desses intervalos a panela está vazia, então não desenha nada — em
+    // vez de deixar a linha "descer" pra temperatura da mostura assim que
+    // a 1ª de várias adições parciais retorna (a panela ainda tem metade
+    // da decocção fervendo nesse momento).
+    const boilSegments = [];
+    let currentSegment = null;
+    let waitingForNextAddition = false; // depois de um retorno NÃO final, até o retorno final daquela puxada
+    for (const r of rows) {
+      if (r.pullsDecoction) { currentSegment = []; waitingForNextAddition = false; }
+      if (currentSegment) {
+        if (r.isFinalReturn) {
+          currentSegment.push({ t: r.totalMin, v: r.boil }); // ponto de encontro: panela e mostura convergem
+        } else if (waitingForNextAddition || (r.returnsDecoction && !r.isFinalReturn)) {
+          // Ainda falta devolver parte da puxada — a panela continua com
+          // decocção fervendo, mesmo em etapas "de descanso" da mostura
+          // principal como a Rampa de proteína entre as duas adições.
+          currentSegment.push({ t: r.totalMin, v: params.fervuraTemp });
+        } else if (r.boil !== null && r.boil !== undefined) {
+          currentSegment.push({ t: r.totalMin, v: r.boil });
+        }
+        if (r.returnsDecoction && !r.isFinalReturn) waitingForNextAddition = true;
+      }
+      if (r.isFinalReturn) {
+        if (currentSegment.length > 1) boilSegments.push(currentSegment);
+        currentSegment = null;
+        waitingForNextAddition = false;
+      }
+    }
+    const boilPts = boilSegments.flat();
 
     const allTemps = mashPts.concat(boilPts).map((p) => p.v);
     const tMin = Math.min(...allTemps) - 5;
@@ -568,17 +663,36 @@
 
     const pathFor = (pts) => pts.map((p, i) => `${i === 0 ? "M" : "L"}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
 
+    // Texto do SVG escala junto com o viewBox — num celular estreito, o
+    // navegador encolhe tudo proporcionalmente e as legendas viram
+    // ilegíveis (o viewBox continua 640px de largura "lógica" não importa
+    // o quanto o SVG é comprimido na tela real). Mede a largura real
+    // renderizada e aumenta o font-size declarado na mesma proporção, pra
+    // manter um tamanho mínimo real na tela em qualquer largura.
+    const renderedWidth = el.chart.getBoundingClientRect().width || W;
+    const textScale = Math.max(1, W / renderedWidth);
+    const axisFontSize = (8 * textScale).toFixed(1);
+    const gridFontSize = (9 * textScale).toFixed(1);
+
+    const zoneRects = ENZYME_ZONES.map((z) => {
+      const loC = Math.max(z.lo, tMin);
+      const hiC = Math.min(z.hi, tMax);
+      if (hiC <= loC) return "";
+      const yTop = y(hiC), yBot = y(loC);
+      return `<rect x="${padL}" y="${yTop.toFixed(1)}" width="${(W - padL - padR).toFixed(1)}" height="${(yBot - yTop).toFixed(1)}" fill="rgba(${z.rgb},0.14)" />`;
+    }).join("");
+
     const gridLines = [];
-    const gridTemps = [tMin + 5, (tMin + tMax) / 2, tMax - 5];
+    const gridTemps = [tMin + 5, tMax - 5];
     for (const gt of gridTemps) {
       gridLines.push(
         `<line x1="${padL}" y1="${y(gt).toFixed(1)}" x2="${W - padR}" y2="${y(gt).toFixed(1)}" style="stroke:var(--line);stroke-width:1" />` +
-        `<text x="${padL - 6}" y="${(y(gt) + 3).toFixed(1)}" text-anchor="end" style="font-size:9px;fill:var(--text-dim);font-family:var(--font-data)">${Math.round(gt)}°</text>`
+        `<text x="${padL - 6}" y="${(y(gt) + 3).toFixed(1)}" text-anchor="end" style="font-size:${gridFontSize}px;fill:var(--text-dim);font-family:var(--font-data)">${Math.round(gt)}°</text>`
       );
     }
 
     const mashChanges = changePoints(mashPts);
-    const boilChanges = changePoints(boilPts);
+    const boilChanges = boilSegments.flatMap(changePoints);
 
     const axisBaseY = H - padB;
     const rawTickTimes = [...new Set([0, total, ...mashChanges.map((p) => p.t), ...boilChanges.map((p) => p.t)])].sort((a, b) => a - b);
@@ -599,7 +713,7 @@
       const px = x(t).toFixed(1);
       return (
         `<line x1="${px}" y1="${axisBaseY.toFixed(1)}" x2="${px}" y2="${(axisBaseY + 4).toFixed(1)}" style="stroke:var(--text-dim);stroke-width:1" />` +
-        `<text x="${px}" y="${(axisBaseY + 13).toFixed(1)}" text-anchor="end" transform="rotate(-50 ${px} ${(axisBaseY + 13).toFixed(1)})" style="font-size:8px;fill:var(--text-dim);font-family:var(--font-data)">${fmtAxisTime(t)}</text>`
+        `<text x="${px}" y="${(axisBaseY + 13).toFixed(1)}" text-anchor="end" transform="rotate(-50 ${px} ${(axisBaseY + 13).toFixed(1)})" style="font-size:${axisFontSize}px;fill:var(--text-dim);font-family:var(--font-data)">${fmtAxisTime(t)}</text>`
       );
     });
 
@@ -620,24 +734,28 @@
       const mashPy = y(valueAt(mashPts, elapsedMin)).toFixed(1);
       playhead = `<line x1="${px}" y1="${padT}" x2="${px}" y2="${axisBaseY.toFixed(1)}" style="stroke:var(--amber);stroke-width:1.5px;stroke-dasharray:4,2" />` +
         `<circle cx="${px}" cy="${mashPy}" r="4.5" style="fill:var(--amber);stroke:var(--surface);stroke-width:1.5" />`;
-      if (boilPts.length && elapsedMin >= boilPts[0].t && elapsedMin <= boilPts[boilPts.length - 1].t) {
-        const boilPy = y(valueAt(boilPts, elapsedMin)).toFixed(1);
+      const activeSegment = segmentAt(boilSegments, elapsedMin);
+      if (activeSegment) {
+        const boilPy = y(valueAt(activeSegment, elapsedMin)).toFixed(1);
         playhead += `<circle cx="${px}" cy="${boilPy}" r="4.5" style="fill:var(--amber);stroke:var(--surface);stroke-width:1.5" />`;
       }
     }
 
+    const boilPath = boilSegments.map(pathFor).join(" ");
+
     el.chart.innerHTML = `
+      ${zoneRects}
       ${gridLines.join("")}
       ${guides.join("")}
       <path d="${pathFor(mashPts)}" fill="none" style="stroke:var(--steel);stroke-width:2.5px" stroke-linejoin="round" />
-      ${boilPts.length ? `<path d="${pathFor(boilPts)}" fill="none" style="stroke:var(--copper);stroke-width:2.5px" stroke-linejoin="round" />` : ""}
+      ${boilPath ? `<path d="${boilPath}" fill="none" style="stroke:var(--copper);stroke-width:2.5px" stroke-linejoin="round" />` : ""}
       ${markers(mashChanges, "var(--steel)")}
       ${markers(boilChanges, "var(--copper)")}
       ${ticks.join("")}
       ${playhead}
     `;
 
-    chartGeom = { rows, mashPts, boilPts, total, padL, padR, padT, padB, W, H, tMin, tMax };
+    chartGeom = { rows, mashPts, boilSegments, total, padL, padR, padT, padB, W, H, tMin, tMax };
     if (hoverT !== null) paintChartHover();
   }
 
@@ -679,11 +797,11 @@
       return;
     }
 
-    const { rows, mashPts, boilPts } = chartGeom;
+    const { rows, mashPts, boilSegments } = chartGeom;
     const row = rows[currentStepIndex(rows, hoverT)];
     const mashV = valueAt(mashPts, hoverT);
-    const inBoilRange = boilPts.length && hoverT >= boilPts[0].t && hoverT <= boilPts[boilPts.length - 1].t;
-    const boilV = inBoilRange ? valueAt(boilPts, hoverT) : null;
+    const hoverSegment = segmentAt(boilSegments, hoverT);
+    const boilV = hoverSegment ? valueAt(hoverSegment, hoverT) : null;
 
     const px = chartXFromT(hoverT).toFixed(1);
     const axisBaseY = chartGeom.H - chartGeom.padB;
@@ -724,6 +842,22 @@
 
   el.chart.addEventListener("mousemove", (e) => updateChartHover(e.clientX, e.clientY));
   el.chart.addEventListener("mouseleave", clearChartHover);
+
+  // O tooltip do gráfico era só de mouse (mousemove/mouseleave) — no
+  // celular, que é o aparelho usado durante a brassagem, ele não existia.
+  // touchstart mostra no toque; touchmove arrasta (com preventDefault, pra
+  // não rolar a página enquanto o dedo desliza sobre o gráfico); touchend
+  // esconde, igual ao mouseleave.
+  el.chart.addEventListener("touchstart", (e) => {
+    const t = e.touches[0];
+    if (t) updateChartHover(t.clientX, t.clientY);
+  }, { passive: true });
+  el.chart.addEventListener("touchmove", (e) => {
+    const t = e.touches[0];
+    if (t) { updateChartHover(t.clientX, t.clientY); e.preventDefault(); }
+  }, { passive: false });
+  el.chart.addEventListener("touchend", clearChartHover);
+  el.chart.addEventListener("touchcancel", clearChartHover);
 
   function renderPresetOptions() {
     const presets = loadPresets()[state.methodId] || {};
@@ -883,7 +1017,27 @@
   });
   el.methodSelect.addEventListener("change", () => switchMethod(el.methodSelect.value));
 
+  // Tema: "claro"/"escuro" fixam data-theme (força o resultado, veja o
+  // CSS); "sistema" remove o atributo e volta a seguir prefers-color-scheme.
+  const THEME_CYCLE = ["system", "light", "dark"];
+  const THEME_LABEL = { system: "A", light: "C", dark: "E" };
+  const THEME_TITLE = { system: "Tema: sistema (clique pra claro)", light: "Tema: claro (clique pra escuro)", dark: "Tema: escuro (clique pra sistema)" };
+  function applyTheme(mode) {
+    if (mode === "light" || mode === "dark") document.documentElement.setAttribute("data-theme", mode);
+    else document.documentElement.removeAttribute("data-theme");
+    el.themeToggle.textContent = THEME_LABEL[mode];
+    el.themeToggle.title = THEME_TITLE[mode];
+    el.themeToggle.setAttribute("aria-label", THEME_TITLE[mode]);
+  }
+  el.themeToggle.addEventListener("click", () => {
+    const current = localStorage.getItem(THEME_KEY) || "system";
+    const next = THEME_CYCLE[(THEME_CYCLE.indexOf(current) + 1) % THEME_CYCLE.length];
+    localStorage.setItem(THEME_KEY, next);
+    applyTheme(next);
+  });
+
   function init() {
+    applyTheme(localStorage.getItem(THEME_KEY) || "system");
     el.footerVersion.textContent = `v${window.APP_VERSION || "?"}`;
     state.params = loadCurrentParams(state.methodId);
     timer = loadTimer(state.methodId);

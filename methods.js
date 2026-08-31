@@ -95,12 +95,29 @@ function annotateRealPlateauTimes(rows) {
 }
 
 function runSteps(steps, params) {
+  // Pré-varredura estrutural (não depende dos parâmetros): descobre, pra
+  // cada puxada, qual é o ÚLTIMO retorno associado a ela — é o momento em
+  // que a panela realmente esvazia. Usado só pelo gráfico (ver U5/`app.js`
+  // renderChart) pra parar de desenhar a linha da fervura quando não há
+  // mais decocção na panela, em vez de deixá-la "descer" pra temperatura
+  // da mostura assim que a 1ª de várias adições parciais retorna.
+  const isFinalReturn = new Array(steps.length).fill(false);
+  let lastReturnIdx = -1;
+  steps.forEach((step, idx) => {
+    if (step.pullsDecoction) lastReturnIdx = -1;
+    if (step.returnsDecoction) {
+      if (lastReturnIdx !== -1) isFinalReturn[lastReturnIdx] = false;
+      isFinalReturn[idx] = true;
+      lastReturnIdx = idx;
+    }
+  });
+
   const rows = [];
   let prev = { mash: null, boil: null };
   let totalMin = 0;
   let pullIndex = null;
   let pullOriginalMash = null;
-  for (const step of steps) {
+  steps.forEach((step, idx) => {
     const duration = Math.max(0, num(step.duration(params, prev)));
     const mash = step.mash(params, prev);
     const boil = step.boil ? step.boil(params, prev) : null;
@@ -118,7 +135,8 @@ function runSteps(steps, params) {
     if (step.pullsDecoction) {
       pullIndex = rows.length - 1;
       pullOriginalMash = prev.mash;
-      rows[pullIndex].restsForConversion = !!step.restsForConversion;
+      row.pullsDecoction = true;
+      row.restsForConversion = !!step.restsForConversion;
     }
     if (step.returnsDecoction && pullIndex !== null) {
       // T1 é sempre a temp. da mostura no momento EXATO da puxada (fixo),
@@ -131,10 +149,12 @@ function runSteps(steps, params) {
       pullRow.decoctionFraction = fraction;
       pullRow.decoctionVolumeL = fraction * totalMashVolumeL(params);
       pullRow.returnParts = (pullRow.returnParts || 0) + 1;
+      row.returnsDecoction = true;
+      row.isFinalReturn = isFinalReturn[idx];
     }
 
     prev = { mash, boil: boil !== null ? boil : prev.boil };
-  }
+  });
   return rows;
 }
 
@@ -419,13 +439,13 @@ const duplaAprimorada = buildDuplaAprimorada();
 const tripla = buildTripla();
 
 const METHODS = [
-  { id: "simples", name: "Simples", description: "Uma decocção só: puxa uma fração da mostura, ferve e devolve pra elevar da sacarificação ao mash-out. O método mais rápido e mais fácil de calibrar.", ...simples },
-  { id: "dupla-tradicional", name: "Dupla Tradicional", description: "Duas decocções: rampa de protease no início, depois duas puxadas que levam a mostura até a sacarificação e até o mash-out.", ...duplaTradicional },
-  { id: "dupla-moderna", name: "Dupla Moderna", description: "Duas decocções com rampa de fitase (Säurerast) no início, pensada pra maltes menos modificados — mesma lógica da Dupla Tradicional, temperaturas iniciais mais baixas.", ...duplaModerna },
-  { id: "hochkurz", name: "Hochkurz", description: "Duas decocções compactas com rampas de maltose e dextrinização — cerveja com corpo mais leve, tempo total menor que a Dupla clássica.", ...hochkurz },
-  { id: "boaventura", name: "Boaventura", description: "Rampas de maltose e dextrinização por aquecimento direto na tina; só ao final é puxada uma decocção única, já sacarificada, direto pra fervura.", ...boaventura },
-  { id: "dupla-aprimorada", name: "Dupla Aprimorada", description: "Uma decocção grande (50-60% do lote) devolvida em duas adições parciais, mais uma decocção menor no fim — o \"Enhanced Double Decoction\" do Braukaiser Wiki.", ...duplaAprimorada },
-  { id: "tripla-tradicional", name: "Tripla Tradicional", description: "Três decocções, cada uma puxando cerca de 1/3 da mostura — o método clássico completo, mais longo e com perfil de melanoidinas mais pronunciado.", ...tripla },
+  { id: "simples", name: "Simples", description: "Uma decocção só: puxa uma fração da mostura, ferve e devolve pra elevar da sacarificação ao mash-out. O método mais rápido e mais fácil de calibrar.", source: "Braukaiser Wiki — Single Decoction; Kunze, Technology Brewing and Malting, 3ª ed.", ...simples },
+  { id: "dupla-tradicional", name: "Dupla Tradicional", description: "Duas decocções: rampa de protease no início, depois duas puxadas que levam a mostura até a sacarificação e até o mash-out.", source: "Kunze, Technology Brewing and Malting, 3ª ed.; Narziß, Abriss der Bierbrauerei, 7ª ed.", ...duplaTradicional },
+  { id: "dupla-moderna", name: "Dupla Moderna", description: "Duas decocções com rampa de fitase (Säurerast) no início, pensada pra maltes menos modificados — mesma lógica da Dupla Tradicional, temperaturas iniciais mais baixas.", source: "Narziß, Abriss der Bierbrauerei, 7ª ed. (Säurerast)", ...duplaModerna },
+  { id: "hochkurz", name: "Hochkurz", description: "Duas decocções compactas com rampas de maltose e dextrinização — cerveja com corpo mais leve, tempo total menor que a Dupla clássica.", source: "Narziß, Die Bierbrauerei Band 2, p. 350", ...hochkurz },
+  { id: "boaventura", name: "Boaventura", description: "Rampas de maltose e dextrinização por aquecimento direto na tina; só ao final é puxada uma decocção única, já sacarificada, direto pra fervura.", source: "Autoral (Henrique Boaventura) — variante do Hochkurz, Braukaiser Wiki", ...boaventura },
+  { id: "dupla-aprimorada", name: "Dupla Aprimorada", description: "Uma decocção grande (50-60% do lote) devolvida em duas adições parciais, mais uma decocção menor no fim — o \"Enhanced Double Decoction\" do Braukaiser Wiki.", source: "Braukaiser Wiki — Enhanced Double Decoction", ...duplaAprimorada },
+  { id: "tripla-tradicional", name: "Tripla Tradicional", description: "Três decocções, cada uma puxando cerca de 1/3 da mostura — o método clássico completo, mais longo e com perfil de melanoidinas mais pronunciado.", source: "Narziß, Die Bierbrauerei Band 2, §3.2.4.10 — Dreimaischverfahren", ...tripla },
 ];
 
 function getMethod(id) {
