@@ -6,6 +6,34 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 versionamento segue [SemVer](https://semver.org/lang/pt-BR/) (`MAJOR.MINOR.PATCH`).
 A versão atual fica em `version.js` e aparece no rodapé do app.
 
+## [1.2.0] — 2026-08-31
+
+### Corrigido
+- Dupla Tradicional, Dupla Moderna e Hochkurz: a 2ª decocção ia direto pra
+  fervura sem passar pela sacarificação (a 1ª sempre passou) — sem esse
+  repouso, o amido dessa porção não converte antes da fervura matar as
+  enzimas. Agora as duas decocções seguem o mesmo regime (+~10min).
+- Rótulos que craviam uma fração fixa ("Transferência 1/3...", "...
+  (50-60%)...") contradiziam o % real mostrado ao lado assim que o volume
+  passou a ser calculado. Removida a fração hardcoded do rótulo — quem
+  quiser o número, o número real já está ali do lado.
+- Números da interface (volumes, temperaturas, porcentagens) agora em
+  pt-BR (vírgula decimal) e com espaço antes da unidade; porcentagem do
+  volume puxado ganhou uma casa decimal, consistente com o volume em L.
+
+### Adicionado
+- Aviso contextual no tooltip de "puxar" quando a fração ultrapassa 50% do
+  volume total da mostura, explicando por que aquela puxada específica é
+  segura (tem repouso de conversão próprio, ou volta em mais de uma
+  adição) — em vez de deixar o usuário sem explicação diante de um número
+  grande.
+- Barra de resumo: "Volume da mostura" e "Maior puxada" (com tooltip
+  explicando o cálculo e a folga mínima recomendada de panela) substituem
+  os dois campos que só ecoavam "Temp. Mash Out" e "Temp. de fervura".
+- Abaixo de 860px de largura, a fila de abas de método vira um `<select>`
+  nativo — com 7 métodos a fila estourava a linha sem indicação de scroll,
+  e a última aba ficava invisível no celular.
+
 ## [1.1.0] — 2026-08-31
 
 ### Adicionado
@@ -81,6 +109,7 @@ de volume.
 - Autosave no `localStorage`, predefinições nomeadas (ocultas da UI por
   ora), exportar/importar configuração em JSON.
 
+[1.2.0]: https://github.com/henriqueboaventura/decoccao/compare/204aac3...main
 [1.1.0]: https://github.com/henriqueboaventura/decoccao/compare/a162452...5e60f93
 [1.0.0]: https://github.com/henriqueboaventura/decoccao/compare/f9b0ed9...a162452
 [0.1.1]: https://github.com/henriqueboaventura/decoccao/compare/12643a4...f9b0ed9

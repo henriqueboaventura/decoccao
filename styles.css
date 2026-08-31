@@ -124,6 +124,30 @@ button, select, input {
   color: #fff9ef;
 }
 
+.method-select {
+  display: none;
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 0.55rem 0.6rem;
+  border-radius: var(--radius);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* Abaixo de ~860px a fila de abas passa a rolar horizontalmente sem
+   indicação visível, e com 7+ métodos as últimas ficam invisíveis (ver
+   CHANGELOG). Um <select> nativo resolve — é literalmente pra isso que
+   ele serve: uma escolha entre N itens mutuamente exclusivos. */
+@media (max-width: 860px) {
+  .method-tabs { display: none; }
+  .method-select { display: block; }
+}
+
 .method-description {
   margin: 0.65rem 0 0;
   padding-top: 0.55rem;

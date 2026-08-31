@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const { METHODS, getMethod, defaultParams, computeSchedule } = window.Decoccao;
+  const { METHODS, getMethod, defaultParams, computeSchedule, totalMashVolumeL } = window.Decoccao;
   const STORAGE_PREFIX = "decoccao:v1";
   const CURRENT_KEY = (id) => `${STORAGE_PREFIX}:current:${id}`;
   const PRESETS_KEY = `${STORAGE_PREFIX}:presets`;
@@ -10,14 +10,17 @@
 
   const el = {
     methodTabs: document.getElementById("methodTabs"),
+    methodSelect: document.getElementById("methodSelect"),
     methodDescription: document.getElementById("methodDescription"),
     form: document.getElementById("paramsForm"),
     ladder: document.getElementById("ladder"),
     chart: document.getElementById("chart"),
     totalTime: document.getElementById("totalTime"),
     stepCount: document.getElementById("stepCount"),
-    finalMashTemp: document.getElementById("finalMashTemp"),
-    peakBoilTemp: document.getElementById("peakBoilTemp"),
+    mashVolumeWrap: document.getElementById("mashVolumeWrap"),
+    mashVolume: document.getElementById("mashVolume"),
+    maxPullWrap: document.getElementById("maxPullWrap"),
+    maxPull: document.getElementById("maxPull"),
     timerPanel: document.querySelector(".timer-panel"),
     timerClock: document.getElementById("timerClock"),
     timerStepLabel: document.getElementById("timerStepLabel"),
@@ -115,8 +118,7 @@
   el.toastAction.addEventListener("click", () => location.reload());
 
   function fmtNum(n, digits = 1) {
-    const rounded = Math.round(n * Math.pow(10, digits)) / Math.pow(10, digits);
-    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(digits);
+    return n.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: digits });
   }
 
   function splitHM(totalMin) {
@@ -193,6 +195,16 @@
       btn.addEventListener("click", () => switchMethod(m.id));
       el.methodTabs.appendChild(btn);
     }
+    if (el.methodSelect.options.length !== METHODS.length) {
+      el.methodSelect.innerHTML = "";
+      for (const m of METHODS) {
+        const opt = document.createElement("option");
+        opt.value = m.id;
+        opt.textContent = m.name;
+        el.methodSelect.appendChild(opt);
+      }
+    }
+    el.methodSelect.value = state.methodId;
     const newDescription = getMethod(state.methodId).description || "";
     if (el.methodDescription.textContent !== newDescription) {
       el.methodDescription.textContent = newDescription;
@@ -269,6 +281,20 @@
     return btn;
   }
 
+  // Cria o botão de ajuda uma vez dentro de `container` e só atualiza o
+  // texto nas renderizações seguintes — evita duplicar botão/listener em
+  // conteúdo que é atualizado com frequência (ex.: barra de resumo).
+  function ensureHint(container, text) {
+    let btn = container.querySelector(".hint");
+    if (!btn) {
+      btn = makeHintBtn(text);
+      container.appendChild(btn);
+    } else {
+      btn.setAttribute("data-tip", text);
+    }
+    return btn;
+  }
+
   // Texto do tooltip do "puxar" varia por etapa: segue a distinção entre
   // decocção grossa/rala do Braukaiser Wiki (Decoction Mashing) — puxadas
   // que ainda vão descansar pra sacarificação (r.restsForConversion) devem
@@ -278,13 +304,25 @@
   function volumeHintText(r) {
     const base = "Volume estimado a retirar (\"puxar\") da tina de mostura e levar pra fervura nesta decocção. " +
       "O valor já é o total dessa fração (grão + líquido), calculado pelo balanço de energia entre a temperatura atual e a temperatura alvo após o retorno.";
+    const big = r.decoctionFraction >= 0.5;
+    const waterNote = " Vale afinar com um pouco de água (5-10% do volume da puxada) antes de ferver, pra facilitar mexer.";
     if (r.restsForConversion) {
-      const big = r.decoctionFraction >= 0.4
-        ? " Como é uma fração grande, vale afinar com um pouco de água (5-10% do volume da puxada) antes de ferver, pra facilitar mexer."
-        : "";
-      return base + " Essa puxada ainda vai descansar pra sacarificação antes da fervura, então mantenha-a só um pouco mais grossa que a mostura principal — grão sempre submerso no líquido, nunca seco." + big;
+      let text = base + " Essa puxada ainda vai descansar pra sacarificação antes da fervura, então mantenha-a só um pouco mais grossa que a mostura principal — grão sempre submerso no líquido, nunca seco.";
+      if (big) {
+        text += r.returnParts > 1
+          ? " Essa fração já passa de 50% do volume total da mostura — só é seguro puxar tanto porque a devolução acontece em mais de uma adição (dá tempo pro resto da mostura converter entre uma e outra) e porque essa porção sacarifica sozinha antes de ferver."
+          : " Essa fração já passa de 50% do volume total da mostura — só é seguro puxar tanto porque essa porção sacarifica sozinha (tem seu próprio descanso de conversão) antes de ir à fervura.";
+        text += waterNote;
+      } else if (r.decoctionFraction >= 0.4) {
+        text += waterNote;
+      }
+      return text;
     }
-    return base + " Essa é a puxada final: a conversão de amido já aconteceu antes dela, então não precisa mais descansar — pode ser puxada mais rala (mais líquida), já que o objetivo aqui é só levá-la à fervura.";
+    let text = base + " Essa é a puxada final: a conversão de amido já aconteceu antes dela, então não precisa mais descansar — pode ser puxada mais rala (mais líquida), já que o objetivo aqui é só levá-la à fervura.";
+    if (big) {
+      text += " Atenção: essa fração passa de 50% do volume total e não tem descanso de conversão próprio nem retorna em parcelas — confirme que o resto da mostura já converteu todo o amido antes de puxar tanto.";
+    }
+    return text;
   }
 
   function renderForm() {
@@ -356,10 +394,25 @@
 
     el.totalTime.innerHTML = `${fmtHM(total)} <span>tempo total de processo</span>`;
     el.stepCount.textContent = String(rows.length);
-    const lastMash = rows.length ? rows[rows.length - 1].mash : null;
-    el.finalMashTemp.textContent = lastMash !== null ? `${fmtNum(lastMash)}°C` : "–";
-    const boilTemps = rows.map((r) => r.boil).filter((v) => v !== null && v !== undefined);
-    el.peakBoilTemp.textContent = boilTemps.length ? `${fmtNum(Math.max(...boilTemps))}°C` : "–";
+
+    const mashVolumeL = totalMashVolumeL(state.params);
+    el.mashVolume.textContent = `${fmtNum(mashVolumeL)} L`;
+    ensureHint(el.mashVolumeWrap,
+      `Volume total estimado da mostura (água + malte molhado): ${fmtNum(state.params.waterVolume)}L de água ` +
+      `+ ${fmtNum(state.params.grainWeight)}kg de malte × 0,67L/kg = ${fmtNum(mashVolumeL)}L. ` +
+      "É o volume de referência usado pra calcular quanto puxar em cada decocção."
+    );
+
+    const pulls = rows.filter((r) => r.decoctionVolumeL !== undefined);
+    const maxPullL = pulls.length ? Math.max(...pulls.map((r) => r.decoctionVolumeL)) : 0;
+    const minPanelaL = maxPullL * 1.25;
+    el.maxPull.textContent = pulls.length ? `${fmtNum(maxPullL)} L` : "–";
+    ensureHint(el.maxPullWrap,
+      pulls.length
+        ? `Volume da maior puxada deste programa — é ela que dimensiona sua panela de fervura da decocção. ` +
+          `Recomenda-se folga de pelo menos 25% sobre esse volume, então a panela precisa ter pelo menos ${fmtNum(minPanelaL)}L.`
+        : "Este método não puxa decocção."
+    );
 
     const elapsedMin = timerElapsedMs() / 60000;
     const clampedElapsed = Math.max(0, Math.min(elapsedMin, total));
@@ -425,11 +478,11 @@
       if (r.decoctionVolumeL !== undefined) {
         const pill = document.createElement("span");
         pill.className = "temp-pill temp-pill--volume";
-        pill.textContent = `puxar ≈${fmtNum(r.decoctionVolumeL)}L`;
+        pill.textContent = `puxar ≈${fmtNum(r.decoctionVolumeL)} L`;
         const hint = makeHintBtn(volumeHintText(r));
         hint.classList.add("hint--volume");
         const small = document.createElement("small");
-        small.textContent = `${Math.round(r.decoctionFraction * 100)}% do volume`;
+        small.textContent = `${fmtNum(r.decoctionFraction * 100)}% do volume`;
         volume.appendChild(pill);
         volume.appendChild(hint);
         volume.appendChild(small);
@@ -805,6 +858,7 @@
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") closeHints();
   });
+  el.methodSelect.addEventListener("change", () => switchMethod(el.methodSelect.value));
 
   function init() {
     el.footerVersion.textContent = `v${window.APP_VERSION || "?"}`;

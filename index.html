@@ -20,6 +20,7 @@
     <span class="brand__tag">Programas de mostura</span>
   </div>
   <div class="method-tabs" id="methodTabs" role="tablist" aria-label="Método de decocção"></div>
+  <select class="method-select" id="methodSelect" aria-label="Método de decocção"></select>
   <p class="method-description" id="methodDescription"></p>
 </header>
 
@@ -55,8 +56,8 @@
       <div class="summary-bar__total" id="totalTime">0<span>min</span></div>
       <div class="summary-bar__meta">
         <span>Etapas: <strong id="stepCount">0</strong></span>
-        <span>Temp. final da mostura: <strong id="finalMashTemp">–</strong></span>
-        <span>Pico de fervura: <strong id="peakBoilTemp">–</strong></span>
+        <span id="mashVolumeWrap">Volume da mostura: <strong id="mashVolume">–</strong></span>
+        <span id="maxPullWrap">Maior puxada: <strong id="maxPull">–</strong></span>
       </div>
     </div>
 

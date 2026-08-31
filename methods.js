@@ -95,6 +95,7 @@ function runSteps(steps, params) {
       const pullRow = rows[pullIndex];
       pullRow.decoctionFraction = fraction;
       pullRow.decoctionVolumeL = fraction * totalMashVolumeL(params);
+      pullRow.returnParts = (pullRow.returnParts || 0) + 1;
     }
 
     prev = { mash, boil: boil !== null ? boil : prev.boil };
@@ -153,6 +154,12 @@ function buildSimples({
   return { paramSchema, steps };
 }
 
+// Dupla decocção: as duas puxadas descansam pra sacarificação (a
+// mesma Temp./Tempo de sacarificação da decocção, reaproveitados) antes de
+// ferver. A 2ª decocção precisa desse repouso tanto quanto a 1ª — sem ele,
+// a alfa-amilase não converte o amido daquela porção antes da fervura
+// matar as enzimas, e metade do mecanismo da decocção se perde (Brücklmeier,
+// Handbuch der Bierbrauerei, p. 132).
 function buildDupla({
   rampaLabel, rampaKey, rampaTimeDefault = 10,
   mashInDefault, mashTemp2Default, mashOutTempDefault,
@@ -190,8 +197,10 @@ function buildDupla({
     { label: "Primeira decocção", duration: (p) => p.decoction1Time, mash: sameMash, boil: sameBoil },
     { label: "Transferência Fervura → Mostura", duration: (p) => p.transferTime, mash: (p) => p.mashTemp2, boil: (p) => p.mashTemp2, returnsDecoction: true },
     { label: rampaSaccLabel, duration: (p) => p.rampaSaccTime, mash: sameMash, boil: sameBoil },
-    { label: "Transferência Mostura → Fervura", duration: (p) => p.transferTime, mash: sameMash, boil: sameBoil, pullsDecoction: true, restsForConversion: false },
-    { label: "Aquecimento da 2ª decocção", duration: (p, prev) => (p.fervuraTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.fervuraTemp },
+    { label: "Transferência Mostura → Fervura", duration: (p) => p.transferTime, mash: sameMash, boil: sameBoil, pullsDecoction: true, restsForConversion: true },
+    { label: "Aquecimento da 2ª decocção (até a sacarificação)", duration: (p, prev) => (p.decoccao1SaccTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.decoccao1SaccTemp },
+    { label: "Sacarificação da decocção", duration: (p) => p.saccTime, mash: sameMash, boil: sameBoil },
+    { label: "Aquecimento da 2ª decocção (até a fervura)", duration: (p, prev) => (p.fervuraTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.fervuraTemp },
     { label: "Segunda decocção", duration: (p) => p.decoction2Time, mash: sameMash, boil: sameBoil },
     { label: "Transferência Fervura → Mostura", duration: (p) => p.transferTime, mash: (p) => p.mashOutTemp, boil: (p) => p.mashOutTemp, returnsDecoction: true },
     { label: "Mash Out", duration: (p) => p.mashOutTime, mash: sameMash },
@@ -228,7 +237,7 @@ function buildDuplaAprimorada() {
   const steps = [
     { label: "Mash In", duration: () => 0, mash: (p) => p.acidRestTemp },
     { label: "Rampa ácida", duration: (p) => p.acidRestTime, mash: sameMash },
-    { label: "Transferência da 1ª decocção (50-60%) Mostura → Fervura", duration: (p) => p.transferTime, mash: sameMash, boil: sameMash, pullsDecoction: true, restsForConversion: true },
+    { label: "Transferência da 1ª decocção Mostura → Fervura", duration: (p) => p.transferTime, mash: sameMash, boil: sameMash, pullsDecoction: true, restsForConversion: true },
     { label: "Aquecimento da decocção (até a sacarificação)", duration: (p, prev) => (p.decoccao1SaccTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.decoccao1SaccTemp },
     { label: "Sacarificação da decocção", duration: (p) => p.saccTime, mash: sameMash, boil: sameBoil },
     { label: "Aquecimento da decocção (até a fervura)", duration: (p, prev) => (p.fervuraTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.fervuraTemp },
@@ -273,21 +282,21 @@ function buildTripla() {
   const steps = [
     { label: "Mash In", duration: () => 0, mash: (p) => p.mashInTemp },
     { label: "Rampa de fitase", duration: (p) => p.rampaFitaseTime, mash: sameMash },
-    { label: "Transferência 1/3 Mostura → Fervura", duration: (p) => p.transferTime, mash: sameMash, boil: sameMash, pullsDecoction: true, restsForConversion: true },
+    { label: "Transferência da 1ª decocção Mostura → Fervura", duration: (p) => p.transferTime, mash: sameMash, boil: sameMash, pullsDecoction: true, restsForConversion: true },
     { label: "Aquecimento da 1ª decocção (até a sacarificação)", duration: (p, prev) => (p.decoccao1SaccTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.decoccao1SaccTemp },
     { label: "Sacarificação da decocção", duration: (p) => p.saccTime, mash: sameMash, boil: sameBoil },
     { label: "Aquecimento da 1ª decocção (até a fervura)", duration: (p, prev) => (p.fervuraTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.fervuraTemp },
     { label: "Primeira decocção", duration: (p) => p.decoction1Time, mash: sameMash, boil: sameBoil },
     { label: "Transferência Fervura → Mostura", duration: (p) => p.transferTime, mash: (p) => p.mashTemp2, boil: (p) => p.mashTemp2, returnsDecoction: true },
     { label: "Rampa de protease", duration: (p) => p.rampaProteaseTime, mash: sameMash, boil: sameBoil },
-    { label: "Transferência 1/3 Mostura → Fervura", duration: (p) => p.transferTime, mash: sameMash, boil: sameBoil, pullsDecoction: true, restsForConversion: true },
+    { label: "Transferência da 2ª decocção Mostura → Fervura", duration: (p) => p.transferTime, mash: sameMash, boil: sameBoil, pullsDecoction: true, restsForConversion: true },
     { label: "Aquecimento da 2ª decocção (até a sacarificação)", duration: (p, prev) => (p.decoccao2SaccTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.decoccao2SaccTemp },
     { label: "Sacarificação da decocção", duration: (p) => p.saccTime, mash: sameMash, boil: sameBoil },
     { label: "Aquecimento da 2ª decocção (até a fervura)", duration: (p, prev) => (p.fervuraTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.fervuraTemp },
     { label: "Segunda decocção", duration: (p) => p.decoction2Time, mash: sameMash, boil: sameBoil },
     { label: "Transferência Fervura → Mostura", duration: (p) => p.transferTime, mash: (p) => p.mashTemp3, boil: (p) => p.mashTemp3, returnsDecoction: true },
     { label: "Rampa de sacarificação", duration: (p) => p.rampaSaccTime, mash: sameMash, boil: sameBoil },
-    { label: "Transferência 1/3 Mostura → Fervura", duration: (p) => p.transferTime, mash: sameMash, boil: sameBoil, pullsDecoction: true, restsForConversion: false },
+    { label: "Transferência da 3ª decocção Mostura → Fervura", duration: (p) => p.transferTime, mash: sameMash, boil: sameBoil, pullsDecoction: true, restsForConversion: false },
     { label: "Aquecimento da 3ª decocção", duration: (p, prev) => (p.fervuraTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.fervuraTemp },
     { label: "Terceira decocção", duration: (p) => p.decoction3Time, mash: sameMash, boil: sameBoil },
     { label: "Transferência Fervura → Mostura", duration: (p) => p.transferTime, mash: (p) => p.mashOutTemp, boil: (p) => p.mashOutTemp, returnsDecoction: true },
@@ -398,4 +407,4 @@ function computeSchedule(method, params) {
   return runSteps(method.steps, params);
 }
 
-window.Decoccao = { METHODS, getMethod, defaultParams, computeSchedule };
+window.Decoccao = { METHODS, getMethod, defaultParams, computeSchedule, totalMashVolumeL };
