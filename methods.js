@@ -7,6 +7,12 @@ const G = {
   GRAIN_WEIGHT: { key: "grainWeight", label: "Massa de malte moído", unit: "kg", group: "Insumos", min: 0.1, max: 100, step: 0.1 },
   MASH_IN_TEMP: { key: "mashInTemp", label: "Temp. Mash In", unit: "°C", group: "Geral", min: 20, max: 80, step: 1 },
   HEATING_RATE: { key: "heatingRate", label: "Taxa de aquecimento", unit: "°C/min", group: "Geral", min: 0.5, max: 5, step: 0.1 },
+  // Padrão 0 = a mostura principal não perde temperatura enquanto a
+  // decocção é processada à parte (tina com aquecimento que mantém a
+  // temperatura, ou processo rápido o bastante pra perda ser desprezível).
+  // Quem brassa em tina sem aquecimento pode ligar isso pra puxar um
+  // volume de decocção maior, que compense a perda real (T3).
+  MASH_COOLING_RATE: { key: "mashCoolingRate", label: "Perda térmica da mostura em espera", unit: "°C/min", group: "Geral", min: 0, max: 1, step: 0.05, default: 0 },
   TRANSFER_TIME: { key: "transferTime", label: "Tempo de transferência", unit: "min", group: "Geral", min: 0, max: 30, step: 1 },
   SACC_TEMP: { key: "decoccao1SaccTemp", label: "Temp. de sacarificação da decocção", unit: "°C", group: "Decocções", min: 40, max: 90, step: 1 },
   SACC_TIME: { key: "saccTime", label: "Tempo de sacarificação da decocção", unit: "min", group: "Decocções", min: 0, max: 60, step: 1 },
@@ -127,15 +133,41 @@ function runSteps(steps, params) {
     }
   });
 
+  // T3: por padrão a mostura principal não esfria em espera (tina com
+  // aquecimento, ou perda desprezível) — `mashCoolingRate` 0 é o default
+  // do parâmetro, então tudo abaixo vira no-op e o resultado é idêntico
+  // ao motor antes desta mudança. Quando > 0, a tina esfria durante as
+  // etapas "paradas" (mash: sameMash) enquanto a decocção é processada à
+  // parte — desde a própria puxada (transferência) até o retorno. Um
+  // acumulador SEPARADO do valor de `mash` exibido (`idleCoolingLoss`)
+  // guarda quanto já esfriou desde a puxada, sem se confundir com trocas
+  // de patamar entre adições parciais (isso reintroduziria o bug do C1:
+  // usar a temperatura JÁ MISTURADA de uma adição anterior como T1 da
+  // próxima superestimaria o volume). Só reseta numa puxada NOVA.
+  const coolingRate = num(params.mashCoolingRate, 0);
+
   const rows = [];
   let prev = { mash: null, boil: null };
   let totalMin = 0;
   let pullIndex = null;
   let pullOriginalMash = null;
+  let idleActive = false;
+  let idleCoolingLoss = 0;
   steps.forEach((step, idx) => {
     const duration = Math.max(0, num(step.duration(params, prev)));
-    const mash = step.mash(params, prev);
+    let mash = step.mash(params, prev);
     const boil = step.boil ? step.boil(params, prev) : null;
+
+    if (step.pullsDecoction) {
+      idleActive = true;
+      idleCoolingLoss = 0;
+    }
+    if (idleActive && coolingRate > 0 && step.mash === sameMash) {
+      const loss = coolingRate * duration;
+      idleCoolingLoss += loss;
+      mash -= loss;
+    }
+
     totalMin += duration;
     const row = {
       label: step.label,
@@ -155,9 +187,10 @@ function runSteps(steps, params) {
       row.pullOriginalMash = pullOriginalMash;
     }
     if (step.returnsDecoction && pullIndex !== null) {
-      // T1 é sempre a temp. da mostura no momento EXATO da puxada (fixo),
-      // nunca a temp. intermediária entre adições — ver comentário acima.
-      const t1 = pullOriginalMash;
+      // T1 é sempre a temp. da mostura no momento EXATO da puxada, menos
+      // a perda térmica acumulada desde então (T3) — nunca a temperatura
+      // intermediária de uma adição anterior, ver comentário acima (C1).
+      const t1 = pullOriginalMash - idleCoolingLoss;
       const tb = num(params.fervuraTemp);
       const denom = tb - t1;
       const fraction = denom > 0 ? Math.max(0, Math.min(1, (mash - t1) / denom)) : 0;
@@ -168,6 +201,8 @@ function runSteps(steps, params) {
       row.returnsDecoction = true;
       row.isFinalReturn = isFinalReturn[idx];
       row.pullIndex = pullIndex;
+      row.idleCoolingLossAtReturn = idleCoolingLoss;
+      if (isFinalReturn[idx]) idleActive = false;
     }
 
     prev = { mash, boil: boil !== null ? boil : prev.boil };
@@ -184,9 +219,15 @@ function runSteps(steps, params) {
     if (!pullRow.pullsDecoction || !(pullRow.returnParts > 1)) return;
     const tb = num(params.fervuraTemp);
     let tinaVolumeL = totalMashVolumeL(params) - pullRow.decoctionVolumeL;
-    let tinaTemp = pullRow.pullOriginalMash;
-    let remainingL = pullRow.decoctionVolumeL;
     const returns = rows.filter((r) => r.pullIndex === pIdx);
+    // Mesma perda térmica acumulada (T3) que corrigiu o T1 da fração
+    // total, aplicada segmento a segmento: cada adição parcial começa do
+    // valor JÁ MISTURADO da adição anterior (ou do T1 original, na 1ª),
+    // menos só a perda ADICIONAL acumulada nesse intervalo específico —
+    // não a perda total, que já está embutida no valor anterior.
+    let tinaTemp = pullRow.pullOriginalMash - (returns[0].idleCoolingLossAtReturn || 0);
+    let prevCoolingLoss = returns[0].idleCoolingLossAtReturn || 0;
+    let remainingL = pullRow.decoctionVolumeL;
     returns.forEach((r, i) => {
       if (i === returns.length - 1) {
         r.returnVolumeL = remainingL; // última adição: o que sobrou da puxada
@@ -198,7 +239,9 @@ function runSteps(steps, params) {
       r.returnVolumeL = addVolumeL;
       remainingL -= addVolumeL;
       tinaVolumeL += addVolumeL;
-      tinaTemp = r.mash;
+      const nextCoolingLoss = returns[i + 1].idleCoolingLossAtReturn || 0;
+      tinaTemp = r.mash - (nextCoolingLoss - prevCoolingLoss);
+      prevCoolingLoss = nextCoolingLoss;
     });
   });
 
@@ -237,6 +280,7 @@ function buildSimples({
     { ...G.MASHOUT_TEMP, default: mashOutTempDefault },
     { ...G.MASHOUT_TIME, default: 10 },
     { ...G.HEATING_RATE, default: heatingRateDefault },
+    { ...G.MASH_COOLING_RATE },
   ];
 
   const steps = [
@@ -297,6 +341,7 @@ function buildDupla({
     { ...G.MASHOUT_TEMP, default: mashOutTempDefault },
     { ...G.MASHOUT_TIME, default: 10 },
     { ...G.HEATING_RATE, default: 2 },
+    { ...G.MASH_COOLING_RATE },
   ];
 
   const steps = [
@@ -346,6 +391,7 @@ function buildDuplaAprimorada() {
     { ...G.MASHOUT_TEMP, default: 76 },
     { ...G.MASHOUT_TIME, default: 10 },
     { ...G.HEATING_RATE, default: 2 },
+    { ...G.MASH_COOLING_RATE },
   ];
 
   const steps = [
@@ -391,6 +437,7 @@ function buildTripla() {
     { ...G.MASHOUT_TEMP, default: 75 },
     { ...G.MASHOUT_TIME, default: 10 },
     { ...G.HEATING_RATE, default: 3 },
+    { ...G.MASH_COOLING_RATE },
   ];
 
   const steps = [
@@ -450,6 +497,7 @@ function buildBoaventura() {
     { ...G.MASHOUT_TEMP, default: 76 },
     { ...G.MASHOUT_TIME, default: 10 },
     { ...G.HEATING_RATE, default: 2 },
+    { ...G.MASH_COOLING_RATE },
   ];
 
   const steps = [
