@@ -2,7 +2,13 @@
 
 ## Margem de perda térmica no cálculo de volume de decocção
 
-**Status:** não implementado — registrado para decisão futura.
+**Status:** implementado (branch `feature/t3-perda-termica-espera`) — ver
+`mashCoolingRate` em `methods.js`/`app.js`. Parâmetro opcional, **padrão
+0** (sem perda): assume tina com aquecimento que mantém a temperatura,
+que é o caso mais comum — só quem tem tina sem aquecimento e vê a
+mostura esfriar de verdade em espera precisa ligar isso. O texto abaixo
+documenta o raciocínio original; a implementação segue a proposta da
+última seção quase à risca.
 
 ### O que existe hoje
 

@@ -6,6 +6,20 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 versionamento segue [SemVer](https://semver.org/lang/pt-BR/) (`MAJOR.MINOR.PATCH`).
 A versão atual fica em `version.js` e aparece no rodapé do app.
 
+## [1.9.0] — 2026-09-01
+
+### Adicionado
+- **T3**: parâmetro opcional "Perda térmica da mostura em espera"
+  (`mashCoolingRate`, °C/min, grupo "Geral", padrão **0**). Enquanto a
+  mostura principal fica parada esperando a decocção (puxada, fervendo,
+  voltando), tinas sem aquecimento próprio perdem temperatura de
+  verdade — o modelo assumia perda zero sempre. Padrão continua zero
+  (tina com aquecimento que mantém a temperatura, o caso mais comum);
+  quem liga o parâmetro vê o volume calculado crescer pra compensar a
+  perda real, e o gráfico/escada passam a mostrar a queda de
+  temperatura. Testado sem regressão: os 7 métodos com o parâmetro no
+  padrão produzem saída idêntica à v1.8.0.
+
 ## [1.8.0] — 2026-09-01
 
 Quarta leitura: os 10 achados da 3ª leitura fechados 10/10 (rodando a
@@ -348,7 +362,8 @@ de volume.
 - Autosave no `localStorage`, predefinições nomeadas (ocultas da UI por
   ora), exportar/importar configuração em JSON.
 
-[1.8.0]: https://github.com/henriqueboaventura/decoccao/compare/c0ceb1a...main
+[1.9.0]: https://github.com/henriqueboaventura/decoccao/compare/f7ffffd...main
+[1.8.0]: https://github.com/henriqueboaventura/decoccao/compare/c0ceb1a...f7ffffd
 [1.7.0]: https://github.com/henriqueboaventura/decoccao/compare/d32d43a...c0ceb1a
 [1.6.0]: https://github.com/henriqueboaventura/decoccao/compare/93138c9...d32d43a
 [1.5.0]: https://github.com/henriqueboaventura/decoccao/compare/06eb573...93138c9
