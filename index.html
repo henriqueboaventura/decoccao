@@ -116,6 +116,17 @@
   </div>
 </dialog>
 
+<dialog class="modal" id="resetModal">
+  <div class="modal__body">
+    <p class="modal__title">Resetar cronômetro</p>
+    <p class="modal__text">Isso apaga o registro de todas as etapas já confirmadas nesta brassagem (horário real de cada uma) e zera o relógio. Não pode ser desfeito.</p>
+    <div class="modal__actions">
+      <button class="btn btn--ghost" id="cancelResetBtn" type="button">Cancelar</button>
+      <button class="btn btn--danger-fill" id="confirmResetBtn" type="button">Resetar</button>
+    </div>
+  </div>
+</dialog>
+
 <div class="sr-only" id="srAnnouncer" role="status" aria-live="polite"></div>
 
 <div class="toast" id="toast">

@@ -719,6 +719,8 @@ button, select, input {
 .temp-pill--volume { background: color-mix(in srgb, var(--amber) 22%, transparent); color: var(--amber); font-weight: 700; }
 .temp-pill--return { background: color-mix(in srgb, var(--steel) 22%, transparent); color: var(--steel-strong); }
 .temp-pill--empty { color: var(--text-dim); background: transparent; }
+.temp-pill--alarm { background: color-mix(in srgb, var(--danger) 22%, transparent); color: var(--danger); }
+.ladder-volume small.is-alarm { color: var(--danger); font-weight: 600; }
 
 @media (max-width: 620px) {
   .ladder-row {

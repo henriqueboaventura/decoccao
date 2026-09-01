@@ -50,6 +50,9 @@
     deleteModalText: document.getElementById("deleteModalText"),
     cancelDeleteBtn: document.getElementById("cancelDeleteBtn"),
     confirmDeleteBtn: document.getElementById("confirmDeleteBtn"),
+    resetModal: document.getElementById("resetModal"),
+    cancelResetBtn: document.getElementById("cancelResetBtn"),
+    confirmResetBtn: document.getElementById("confirmResetBtn"),
     toast: document.getElementById("toast"),
     toastText: document.getElementById("toastText"),
     toastAction: document.getElementById("toastAction"),
@@ -69,7 +72,7 @@
   // tempo pra avançar), destaque de etapa antes de começar (activeIndex só
   // existe depois do 1º "Iniciar"), e o plano mudando sob o relógio (editar
   // parâmetros nunca pula etapa, já que a etapa ativa não depende do plano).
-  let timer = { running: false, startEpoch: null, accumulatedMs: 0, actualStepEndMin: [] };
+  let timer = { running: false, startEpoch: null, accumulatedMs: 0, actualStepEndMin: [], alarm: defaultAlarmState() };
   let chartGeom = null;
   let hoverT = null;
   let lastClientX = 0;
@@ -175,6 +178,10 @@
     return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
   }
 
+  function defaultAlarmState() {
+    return { index: -1, count: 0, lastAtMin: -Infinity };
+  }
+
   function loadTimer(methodId) {
     const stored = safeParse(localStorage.getItem(TIMER_KEY(methodId)), null);
     return stored && typeof stored.accumulatedMs === "number"
@@ -185,8 +192,11 @@
           // Sessões salvas antes desta versão não tinham isso — trata como
           // "nenhuma etapa confirmada ainda", não perde o relógio corrido.
           actualStepEndMin: Array.isArray(stored.actualStepEndMin) ? stored.actualStepEndMin : [],
+          // Idem: sem isso, uma etapa já vencida antes de um reload tocava
+          // o alarme de novo assim que a página carregasse (achado P3c).
+          alarm: stored.alarm && typeof stored.alarm === "object" ? stored.alarm : defaultAlarmState(),
         }
-      : { running: false, startEpoch: null, accumulatedMs: 0, actualStepEndMin: [] };
+      : { running: false, startEpoch: null, accumulatedMs: 0, actualStepEndMin: [], alarm: defaultAlarmState() };
   }
 
   function saveTimer() {
@@ -206,6 +216,11 @@
   function activeStepIndex(rowsLength) {
     if (!timerStarted()) return -1;
     return Math.min(timer.actualStepEndMin.length, rowsLength);
+  }
+
+  function isTimerFinished() {
+    const len = state.rows ? state.rows.length : 0;
+    return len > 0 && timer.actualStepEndMin.length >= len;
   }
 
   // Desloca o plano estático (rows) pelo atraso/adiantamento acumulado até
@@ -314,10 +329,20 @@
   }
 
   function switchMethod(id) {
+    // Cada método tem seu próprio cronômetro (localStorage por método) — o
+    // relógio de parede do que fica pra trás continua correndo de verdade
+    // (não é pausado por trocar de aba), mas o alarme dele para de ser
+    // checado, porque tickTimer só olha o método em tela. Sem aviso nenhum
+    // isso silencia uma brassagem em andamento sem ninguém perceber
+    // (achado P3b) — a alternativa de tocar alarme de um método fora de
+    // tela exigiria rodar o motor inteiro em segundo plano pra todos os
+    // métodos, o que não vale o custo frente a um aviso simples.
+    if (timer.running && state.methodId !== id) {
+      toast(`A brassagem em "${getMethod(state.methodId).name}" continua rodando, mas o alarme só toca com o método em tela.`);
+    }
     state.methodId = id;
     state.params = loadCurrentParams(id);
     timer = loadTimer(id);
-    lastAlarmedIndex = -1;
     lastAnnouncedStep = undefined;
     localStorage.setItem(LAST_METHOD_KEY, id);
     renderTabs();
@@ -367,6 +392,29 @@
     });
   }
 
+  // Sobe a partir do botão até achar um ancestral que corta overflow (ex.:
+  // .schedule-panel) — é ELE que limita onde o tooltip pode aparecer, não
+  // a viewport inteira. Sem isso, uma linha no meio da tela mas no fim de
+  // um painel rolável não teria a virada calculada corretamente (P10).
+  function findClippingAncestor(node) {
+    let el = node.parentElement;
+    while (el && el !== document.body) {
+      if (/(hidden|auto|scroll)/.test(getComputedStyle(el).overflowY)) return el;
+      el = el.parentElement;
+    }
+    return null;
+  }
+
+  function updateHintFlip(btn) {
+    // Não dá pra medir a altura real do tooltip (é um ::after, sem caixa
+    // própria pro DOM consultar) — usa uma estimativa conservadora de
+    // espaço mínimo.
+    const rect = btn.getBoundingClientRect();
+    const container = findClippingAncestor(btn);
+    const bottomLimit = container ? container.getBoundingClientRect().bottom : window.innerHeight;
+    btn.classList.toggle("hint--flip-up", bottomLimit - rect.bottom < 180);
+  }
+
   function makeHintBtn(text) {
     const btn = document.createElement("button");
     btn.type = "button";
@@ -374,19 +422,18 @@
     btn.textContent = "?";
     btn.setAttribute("aria-label", "Mais informações");
     btn.setAttribute("data-tip", text);
+    // A decisão de virar pra cima só rodava no clique — mas o tooltip
+    // também abre no :hover e no :focus-visible (mouse/teclado), casos em
+    // que a classe nunca era calculada (achado P10).
+    btn.addEventListener("pointerenter", () => updateHintFlip(btn));
+    btn.addEventListener("focus", () => updateHintFlip(btn));
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       const wasOpen = btn.classList.contains("is-open");
       closeHints();
       if (!wasOpen) {
+        updateHintFlip(btn);
         btn.classList.add("is-open");
-        // Não dá pra medir a altura real do tooltip (é um ::after, sem
-        // caixa própria pro DOM consultar) — usa uma estimativa
-        // conservadora de espaço mínimo. Sem isso ele sempre abre pra
-        // baixo e pode estourar o painel (mais um achado do Raio-X).
-        const rect = btn.getBoundingClientRect();
-        const spaceBelow = window.innerHeight - rect.bottom;
-        btn.classList.toggle("hint--flip-up", spaceBelow < 180);
       }
     });
     return btn;
@@ -561,7 +608,6 @@
     state.rows = rows;
     state.total = total;
 
-    el.totalTime.innerHTML = `${fmtHM(total)} <span>tempo total de processo</span>`;
     el.stepCount.textContent = String(rows.length);
 
     const mashVolumeL = totalMashVolumeL(state.params);
@@ -588,6 +634,15 @@
     const displayRows = activeIndex >= 0 ? effectiveRows(rows) : rows;
     annotateDisplayBoil(displayRows, state.params.fervuraTemp);
     state.displayRows = displayRows;
+
+    // O total no cabeçalho é o número que o brassador olha pra saber a que
+    // horas termina — precisa refletir o atraso/adiantamento acumulado
+    // (displayRows), não o plano original (rows), senão discorda da
+    // própria escada logo abaixo (achado P1).
+    const displayTotal = displayRows.length ? displayRows[displayRows.length - 1].totalMin : 0;
+    el.totalTime.innerHTML = Math.abs(displayTotal - total) > 0.05
+      ? `${fmtHM(displayTotal)} <span>tempo total de processo (previsto ${fmtHM(total)})</span>`
+      : `${fmtHM(displayTotal)} <span>tempo total de processo</span>`;
 
     let nowMin = null;
     if (activeIndex >= 0) {
@@ -622,7 +677,7 @@
   function renderTimerUI(rows, activeIndex, finished) {
     el.timerClock.textContent = fmtClock(timerElapsedMs() / 1000);
     el.timerPanel.classList.toggle("is-running", timer.running);
-    el.timerToggleBtn.textContent = timer.running ? "Pausar" : (timer.accumulatedMs > 0 ? "Continuar" : "Iniciar");
+    el.timerToggleBtn.textContent = finished ? "Nova brassagem" : timer.running ? "Pausar" : (timer.accumulatedMs > 0 ? "Continuar" : "Iniciar");
     el.timerArriveBtn.disabled = !(activeIndex >= 0 && !finished);
     // A etapa ativa muda raramente; o "faltam Xmin" muda 2x/s (tickTimer).
     // Anunciar pro leitor de tela só na virada de etapa — um aria-live no
@@ -650,8 +705,14 @@
       el.timerStepLabel.innerHTML = `<strong>Programa concluído</strong>${driftBadge}`;
     } else if (rows.length && activeIndex >= 0) {
       const row = rows[activeIndex];
-      const remainingMin = Math.max(0, row.totalMin - timerElapsedMs() / 60000);
-      el.timerStepLabel.innerHTML = `Etapa atual: <strong>${row.label}</strong> · faltam ${fmtNum(remainingMin)} min${driftBadge}`;
+      const remainingMin = row.totalMin - timerElapsedMs() / 60000;
+      // Passado o previsto, "faltam 0min" travava ali indefinidamente — o
+      // "+Xmin vs. previsto" ao lado é o atraso ACUMULADO até a última
+      // confirmação, não o estouro desta etapa em curso (achado P7).
+      const timeText = remainingMin >= 0
+        ? `faltam ${fmtNum(remainingMin)} min`
+        : `<span class="timer-drift is-late">+${fmtNum(-remainingMin)} min além do previsto</span> nesta etapa`;
+      el.timerStepLabel.innerHTML = `Etapa atual: <strong>${row.label}</strong> · ${timeText}${driftBadge}`;
     } else {
       el.timerStepLabel.textContent = "Pronto para começar";
     }
@@ -686,7 +747,16 @@
         labelLine.appendChild(plateauHint);
       }
       const small = document.createElement("small");
-      small.textContent = `${fmtNum(r.duration)} min · até ${fmtHM(r.totalMin)}`;
+      // Etapas já confirmadas mostram a duração REAL (displayRows já troca
+      // isso) — mas sem o previsto do plano original ao lado, o usuário
+      // perde exatamente a comparação que o registro de horários deveria
+      // oferecer (achado P6). state.rows[i] é a linha correspondente no
+      // plano original (mesmo índice, effectiveRows preserva a ordem).
+      const rawRow = i < activeIndex && state.rows ? state.rows[i] : null;
+      const plannedNote = rawRow && Math.abs(rawRow.duration - r.duration) > 0.05
+        ? ` (previsto ${fmtNum(rawRow.duration)})`
+        : "";
+      small.textContent = `${fmtNum(r.duration)} min${plannedNote} · até ${fmtHM(r.totalMin)}`;
       label.appendChild(labelLine);
       label.appendChild(small);
 
@@ -710,13 +780,19 @@
       volume.className = "ladder-volume";
       volume.setAttribute("role", "cell");
       if (r.decoctionVolumeL !== undefined) {
+        const isAlarm = volumeSeverity(r.decoctionFraction) === "alarm";
         const pill = document.createElement("span");
         pill.className = "temp-pill temp-pill--volume";
+        if (isAlarm) pill.classList.add("temp-pill--alarm");
         pill.textContent = `puxar ≈${fmtNum(r.decoctionVolumeL)} L`;
         const hint = makeHintBtn(volumeHintText(r));
         hint.classList.add("hint--volume");
-        if (volumeSeverity(r.decoctionFraction) === "alarm") hint.classList.add("hint--alarm");
+        if (isAlarm) hint.classList.add("hint--alarm");
         const small = document.createElement("small");
+        // Um número de 78% precisa se destacar tanto quanto o "?" ao lado
+        // dele — antes só o ícone de ajuda ficava vermelho, e a fração
+        // absurda continuava na mesma cor apagada de sempre (achado P8a).
+        if (isAlarm) small.classList.add("is-alarm");
         small.textContent = `${fmtNum(r.decoctionFraction * 100)}% do volume`;
         volume.appendChild(pill);
         volume.appendChild(hint);
@@ -822,10 +898,10 @@
   // não são um alvo prescritivo do programa, só contexto visual pra saber
   // o que a mostura está "fazendo" em cada patamar.
   const ENZYME_ZONES = [
-    { label: "β-glucanase", cls: "zone-glucanase", lo: 40, hi: 45, rgb: "100,149,237" },
-    { label: "Protease", cls: "zone-protease", lo: 43, hi: 57, rgb: "186,120,209" },
-    { label: "β-amilase", cls: "zone-beta-amilase", lo: 60, hi: 70, rgb: "110,178,110" },
-    { label: "α-amilase", cls: "zone-alpha-amilase", lo: 65, hi: 80, rgb: "196,168,84" },
+    { label: "β-glucanase", cls: "zone-glucanase", lo: 40, hi: 45 },
+    { label: "Protease", cls: "zone-protease", lo: 43, hi: 57 },
+    { label: "β-amilase", cls: "zone-beta-amilase", lo: 60, hi: 70 },
+    { label: "α-amilase", cls: "zone-alpha-amilase", lo: 65, hi: 80 },
   ];
 
   function renderChart(rows, params, elapsedMin) {
@@ -886,7 +962,11 @@
       if (hiC <= loC) return "";
       visibleZones.push(z);
       const yTop = y(hiC), yBot = y(loC);
-      return `<rect x="${padL}" y="${yTop.toFixed(1)}" width="${(W - padL - padR).toFixed(1)}" height="${(yBot - yTop).toFixed(1)}" fill="rgba(${z.rgb},0.14)" />`;
+      // Mesma variável CSS da legenda (--zone-X), não o rgb() fixo de
+      // antes — sem isso a faixa desenhada ficava com a paleta escura
+      // sempre, discordando visualmente da legenda no tema claro (N8a/P8b).
+      // SVG inline no documento enxerga custom properties normalmente.
+      return `<rect x="${padL}" y="${yTop.toFixed(1)}" width="${(W - padL - padR).toFixed(1)}" height="${(yBot - yTop).toFixed(1)}" fill="var(--${z.cls})" fill-opacity="0.14" />`;
     }).join("");
     el.chartEnzymeLegend.innerHTML = visibleZones.length
       ? "Faixas de enzima (referência, Laus et al. 2022): " +
@@ -1207,16 +1287,36 @@
     osc.stop(audioCtx.currentTime + 0.6);
   }
 
-  let lastAlarmedIndex = -1;
+  // Um aviso só é fácil de perder — celular no bolso, do outro lado da
+  // garagem — e como o avanço agora é 100% manual (via "Cheguei"), sem
+  // repetição o cronograma fica congelado ali até alguém notar sozinho
+  // (achado P3a). Repete a cada REPEAT_EVERY_MIN enquanto a etapa não é
+  // confirmada, até um teto de MAX_REPEATS. Estado persistido em
+  // `timer.alarm` (não só em memória) pra sobreviver a um reload sem
+  // re-disparar do zero nem esquecer quantas vezes já tocou (P3c).
+  const ALARM_MAX_REPEATS = 4;
+  const ALARM_REPEAT_EVERY_MIN = 2;
   function maybeAlarm(rows, activeIndex, nowMin, finished) {
-    if (!timer.running || finished || activeIndex < 0 || activeIndex >= rows.length) return;
-    if (nowMin !== null && nowMin >= rows[activeIndex].totalMin - 1e-9 && lastAlarmedIndex !== activeIndex) {
-      lastAlarmedIndex = activeIndex;
-      fireAlarm();
-    }
+    if (!timer.running || finished || activeIndex < 0 || activeIndex >= rows.length || nowMin === null) return;
+    if (nowMin < rows[activeIndex].totalMin - 1e-9) return;
+    if (timer.alarm.index !== activeIndex) timer.alarm = { index: activeIndex, count: 0, lastAtMin: -Infinity };
+    if (timer.alarm.count >= ALARM_MAX_REPEATS) return;
+    if (nowMin - timer.alarm.lastAtMin < ALARM_REPEAT_EVERY_MIN) return;
+    timer.alarm.count++;
+    timer.alarm.lastAtMin = nowMin;
+    saveTimer();
+    fireAlarm();
   }
 
   el.timerToggleBtn.addEventListener("click", () => {
+    // Sem isso, clicar no botão principal depois de concluído (rótulo
+    // ficava "Continuar" — decidido só por accumulatedMs>0, sem checar se
+    // o programa tinha terminado) recomeçava a contar num programa já
+    // concluído, com "Cheguei" ainda desabilitado (achado P5).
+    if (isTimerFinished()) {
+      el.timerResetBtn.click();
+      return;
+    }
     ensureAudioCtx(); // gesto do usuário — desbloqueia o alarme sonoro (autoplay)
     if (timer.running) {
       timer.accumulatedMs = timerElapsedMs();
@@ -1232,12 +1332,24 @@
     renderResults();
   });
 
-  el.timerResetBtn.addEventListener("click", () => {
-    timer = { running: false, startEpoch: null, accumulatedMs: 0, actualStepEndMin: [] };
-    lastAlarmedIndex = -1;
+  function doResetTimer() {
+    timer = { running: false, startEpoch: null, accumulatedMs: 0, actualStepEndMin: [], alarm: defaultAlarmState() };
     releaseWakeLock();
     saveTimer();
     renderResults();
+  }
+  // Excluir uma predefinição (fácil de refazer em 10s) já pede confirmação
+  // — "Resetar" apagava o registro de horários reais de uma brassagem
+  // inteira sem perguntar nada, do lado do botão mais apertado do dia
+  // ("Cheguei"). Só confirma quando já existe algo pra perder.
+  el.timerResetBtn.addEventListener("click", () => {
+    if (timer.actualStepEndMin.length === 0) { doResetTimer(); return; }
+    el.resetModal.showModal();
+  });
+  el.cancelResetBtn.addEventListener("click", () => el.resetModal.close());
+  el.confirmResetBtn.addEventListener("click", () => {
+    el.resetModal.close();
+    doResetTimer();
   });
 
   // "Cheguei" substitui a antiga "Próxima etapa": em vez de empurrar o
@@ -1359,6 +1471,19 @@
     renderForm();
     renderPresetOptions();
     renderResults();
+
+    // Uma sessão restaurada (reload no meio da brassagem — acidental, o
+    // celular descartou a aba, ou o próprio toast "Nova versão ·
+    // Recarregar") mantinha relógio/etapa/atraso certinhos, mas perdia o
+    // wake lock e o alarme sonoro: os dois só eram pedidos no clique de
+    // "Iniciar"/"Cheguei", nunca no carregamento da página (achado P2).
+    if (timer.running) {
+      requestWakeLock(); // não exige gesto do usuário, diferente do áudio
+      if (!audioCtx) {
+        toast("Toque na tela pra ativar o alarme sonoro.");
+        document.addEventListener("click", ensureAudioCtx, { once: true });
+      }
+    }
 
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {

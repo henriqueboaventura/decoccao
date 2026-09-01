@@ -6,6 +6,51 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 versionamento segue [SemVer](https://semver.org/lang/pt-BR/) (`MAJOR.MINOR.PATCH`).
 A versão atual fica em `version.js` e aparece no rodapé do app.
 
+## [1.7.0] — 2026-09-01
+
+Terceira leitura: os 13 achados da 2ª leitura confirmados (rodando a
+ferramenta de verdade, não só lendo código), mais 10 achados novos —
+quase todos no cronômetro que a v1.5.0 reescreveu.
+
+### Corrigido
+- **[crítico] P2**: uma sessão restaurada (reload no meio da brassagem)
+  mantinha relógio/etapa/atraso certos, mas perdia o wake lock e o alarme
+  sonoro — os dois só eram pedidos no clique de "Iniciar"/"Cheguei", nunca
+  no carregamento da página. Agora `init()` pede o wake lock de novo (não
+  exige gesto) e mostra um aviso pra reativar o som no primeiro toque.
+- **[grave] P1**: o "tempo total" grande no topo lia o plano original, não
+  o deslocado pelo atraso — discordava da própria escada logo abaixo.
+  Agora mostra o total real, com o previsto ao lado quando diferem.
+- **[grave] P3**: o alarme tocava só uma vez por etapa (fácil de perder) e
+  ficava mudo se você trocasse de método com uma brassagem rodando em
+  outro. Agora repete a cada 2min (teto de 4 vezes), avisa ao trocar de
+  método, e o estado do alarme é persistido (sobrevive a reload).
+- **P4**: "Resetar" apagava o registro inteiro de uma brassagem sem
+  confirmar — mas "excluir predefinição" (bem menos grave) já pedia.
+  Agora só confirma quando há algo a perder, reaproveitando o `<dialog>`.
+- **P5**: depois de concluído, o botão principal virava "Continuar" (só
+  olhava `accumulatedMs`, não se o programa tinha terminado) — clicar
+  recomeçava a contar num programa já concluído. Agora vira "Nova
+  brassagem" e reaproveita a confirmação do reset.
+- **P6**: etapas já confirmadas mostravam só a duração real, perdendo a
+  comparação com o previsto — que é a razão de ser do registro novo.
+  Agora mostra "24 min (previsto 20)" quando diferem.
+- **P7**: passado o horário previsto, o texto travava em "faltam 0 min"
+  indefinidamente. Agora mostra "+X,X min além do previsto nesta etapa".
+- **P8**: (a) o alarme de puxada ≥60% só deixava o "?" vermelho — a
+  pílula e a porcentagem continuavam na cor de sempre. (b) as faixas de
+  enzima do gráfico usavam cor fixa da paleta escura, quase invisíveis no
+  tema claro mesmo com a legenda já usando cores por tema. Ambos usam a
+  mesma variável CSS agora.
+- **P9 (modelo)**: a mesma fonte (Narziß) que já tinha corrigido a 2ª
+  decocção do Hochkurz também especifica 5-10min pra 1ª — só não tinha
+  sido aplicado. `decoction1TimeDefault` 20→8, Hochkurz cai de 2h37 pra
+  2h25, dentro da faixa que a própria fonte publica.
+- **P10**: a decisão de abrir o tooltip pra cima só rodava no clique, não
+  no hover/foco — e comparava contra a viewport, não contra o painel que
+  de fato corta. Agora roda em `pointerenter`/`focus` também, e mede
+  contra o ancestral que realmente teria cortado o tooltip.
+
 ## [1.6.0] — 2026-08-31
 
 Segunda leitura da calculadora: 13 achados (N1-N9 + 4 de UI) verificados
@@ -249,7 +294,8 @@ de volume.
 - Autosave no `localStorage`, predefinições nomeadas (ocultas da UI por
   ora), exportar/importar configuração em JSON.
 
-[1.6.0]: https://github.com/henriqueboaventura/decoccao/compare/93138c9...main
+[1.7.0]: https://github.com/henriqueboaventura/decoccao/compare/d32d43a...main
+[1.6.0]: https://github.com/henriqueboaventura/decoccao/compare/93138c9...d32d43a
 [1.5.0]: https://github.com/henriqueboaventura/decoccao/compare/06eb573...93138c9
 [1.4.0]: https://github.com/henriqueboaventura/decoccao/compare/5fd27df...06eb573
 [1.3.0]: https://github.com/henriqueboaventura/decoccao/compare/3bf6b39...5fd27df

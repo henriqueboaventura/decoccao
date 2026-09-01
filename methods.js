@@ -489,13 +489,15 @@ const hochkurz = buildDupla({
   mashTemp2Default: 71,
   mashOutTempDefault: 76,
   saccTempDefault: 71,
-  decoction1TimeDefault: 20,
+  // Narziß (Abriss, §2.3.3.4, p. 154 e Band 2, §3.2.4.5, p. 350) dá 5-10min
+  // de fervura pras DUAS decocções do Hochkurz, não só a 2ª — a 1ª ainda
+  // ganha seu próprio repouso de sacarificação (por isso o
+  // restsForConversion:true continua nela), só a fervura em si é curta.
+  decoction1TimeDefault: 8,
   rampaSaccLabel: "Rampa de dextrinização",
   rampaSaccTimeDefault: 40,
-  // Narziß (Band 2, §3.2.4.5, p. 350) é explícito só sobre a 2ª decocção
-  // do Hochkurz: 5-10min de fervura, sem repouso de sacarificação (a
-  // porção já sai sacarificada da tina). Não fala do tempo da 1ª, que
-  // mantém seu próprio repouso — por isso só a 2ª muda aqui.
+  // A 2ª vai direto à fervura, sem repouso — a porção já sai sacarificada
+  // da tina (ver secondDecoctionRests abaixo).
   decoction2TimeDefault: 8,
   secondDecoctionRests: false,
 });
