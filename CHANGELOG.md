@@ -6,6 +6,60 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 versionamento segue [SemVer](https://semver.org/lang/pt-BR/) (`MAJOR.MINOR.PATCH`).
 A versão atual fica em `version.js` e aparece no rodapé do app.
 
+## [1.8.0] — 2026-09-01
+
+Quarta leitura: os 10 achados da 3ª leitura fechados 10/10 (rodando a
+ferramenta, não só lendo o diff), mais 8 achados novos — dois graves com
+a mesma raiz, uma regressão, um de acessibilidade com número medido, e
+quatro de acabamento.
+
+### Corrigido
+- **[grave] N1**: o alarme da última etapa tocava uma vez e nunca
+  repetia — só ela. O `nowMin` que decide a repetição vinha limitado ao
+  fim do próprio cronograma (`cap`); na última etapa, o instante em que
+  o alarme deveria repetir é o mesmo em que `nowMin` para de crescer, e
+  `nowMin - lastAtMin` vira zero pra sempre. Agora o alarme usa o tempo
+  real, sem teto — só o desenho (gráfico/marcador) continua limitado ao
+  fim do eixo.
+- **[grave] N3**: uma brassagem rodando em outro método desaparecia ao
+  reabrir o app — `init()` só carregava o cronômetro do último método
+  visitado, os outros seis nunca eram olhados. Agora varre as sete
+  chaves antes de decidir o que mostrar: havendo uma rodando fora da
+  aba atual, abre direto nela.
+- **[regressão] N4**: a virada do tooltip pra cima (P10, 1.7.0) passou a
+  medir contra o painel que corta o overflow (`.schedule-panel`), que é
+  quase sempre mais alto que a tela — o limite generoso demais fazia o
+  tooltip virar bem depois da dobra da viewport. Agora usa o menor entre
+  o fim do painel e o fim da tela.
+- **[acessibilidade] N5**: as pílulas de puxada e de alarme usavam a cor
+  pura (`--amber`/`--danger`) sobre um fundo que é a mesma cor a 22% —
+  contraste pequeno por construção. Reprovava no claro (2,37:1) e no
+  escuro (3,74:1), cada tema numa pílula diferente. Novos tokens
+  `--amber-strong`/`--danger-strong` (mesmo padrão do `--steel-strong`
+  já existente) resolvem os dois, ≥4,5:1 nas quatro combinações.
+- **N2**: o marcador "Agora" do gráfico também congelava na borda
+  direita depois do previsto — mesma causa do N1, resolvido junto.
+- **N6**: o aviso de "toque pra ativar o alarme sonoro" era um toast que
+  some em 2,2s — quem olhasse pro celular alguns segundos depois de um
+  reload não via mais nada dizendo que o som estava desligado. Agora é
+  uma pílula fixa no painel do cronômetro, visível enquanto o cronômetro
+  roda sem áudio pronto, some sozinha no primeiro toque.
+- **N8**: a descrição do Hochkurz ("a 2ª decocção vai direto à fervura,
+  bem mais curta que a 1ª") ficou contraditória depois do P9 (1.7.0)
+  igualar as duas fervuras em 8min. Reescrita pra "sem o repouso de
+  sacarificação da 1ª, no total bem mais curta" — verdadeira do jeito
+  que sempre foi, sem confundir quem olha a escada. Fonte no rodapé
+  agora cita as duas obras do Narziß usadas na correção do P9.
+
+### Adicionado
+- **N7**: o horário real de cada etapa (`timer.actualStepEndMin`) é o
+  único dado que a ferramenta guarda e nenhuma outra do mercado guarda
+  — mas não tinha saída nenhuma. Agora (1) o Exportar JSON inclui o
+  registro de quem já confirmou pelo menos uma etapa, por método; (2) ao
+  concluir, um resumo mostra a taxa de aquecimento REAL medida contra a
+  configurada (°C/min) — o dado que faltava pro T5, medido em vez de
+  chutado.
+
 ## [1.7.0] — 2026-09-01
 
 Terceira leitura: os 13 achados da 2ª leitura confirmados (rodando a
@@ -294,7 +348,8 @@ de volume.
 - Autosave no `localStorage`, predefinições nomeadas (ocultas da UI por
   ora), exportar/importar configuração em JSON.
 
-[1.7.0]: https://github.com/henriqueboaventura/decoccao/compare/d32d43a...main
+[1.8.0]: https://github.com/henriqueboaventura/decoccao/compare/c0ceb1a...main
+[1.7.0]: https://github.com/henriqueboaventura/decoccao/compare/d32d43a...c0ceb1a
 [1.6.0]: https://github.com/henriqueboaventura/decoccao/compare/93138c9...d32d43a
 [1.5.0]: https://github.com/henriqueboaventura/decoccao/compare/06eb573...93138c9
 [1.4.0]: https://github.com/henriqueboaventura/decoccao/compare/5fd27df...06eb573

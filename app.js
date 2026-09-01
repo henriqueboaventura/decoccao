@@ -28,6 +28,7 @@
     timerPanel: document.querySelector(".timer-panel"),
     timerClock: document.getElementById("timerClock"),
     timerStepLabel: document.getElementById("timerStepLabel"),
+    audioWarning: document.getElementById("audioWarning"),
     timerToggleBtn: document.getElementById("timerToggleBtn"),
     timerArriveBtn: document.getElementById("timerArriveBtn"),
     timerResetBtn: document.getElementById("timerResetBtn"),
@@ -408,10 +409,18 @@
   function updateHintFlip(btn) {
     // Não dá pra medir a altura real do tooltip (é um ::after, sem caixa
     // própria pro DOM consultar) — usa uma estimativa conservadora de
-    // espaço mínimo.
+    // espaço mínimo. O painel que corta overflow (ex.: .schedule-panel,
+    // que guarda a escada inteira) quase sempre é MAIOR que a tela — usar
+    // só o fim dele, como se ele fosse o limite real, deixava o tooltip
+    // virar pra baixo bem depois da dobra da viewport (achado N4). O
+    // limite de verdade é o menor dos dois: onde o painel termina E onde a
+    // tela termina.
     const rect = btn.getBoundingClientRect();
     const container = findClippingAncestor(btn);
-    const bottomLimit = container ? container.getBoundingClientRect().bottom : window.innerHeight;
+    const bottomLimit = Math.min(
+      container ? container.getBoundingClientRect().bottom : Infinity,
+      window.innerHeight
+    );
     btn.classList.toggle("hint--flip-up", bottomLimit - rect.bottom < 180);
   }
 
@@ -644,16 +653,24 @@
       ? `${fmtHM(displayTotal)} <span>tempo total de processo (previsto ${fmtHM(total)})</span>`
       : `${fmtHM(displayTotal)} <span>tempo total de processo</span>`;
 
+    // O cap (fim do último passo) serve pro desenho — marcador e curva não
+    // têm onde ficar depois do eixo. Mas se ele também limitar o `nowMin`
+    // do alarme, o instante em que o alarme deveria começar a repetir é
+    // exatamente o instante em que ele para de andar: `nowMin - lastAtMin`
+    // vira `cap - cap`, zero pra sempre, e a última etapa toca uma única
+    // vez e nunca mais (achado N1). O alarme usa o tempo real, sem teto.
+    let alarmNowMin = null;
     let nowMin = null;
     if (activeIndex >= 0) {
       const cap = displayRows.length ? displayRows[displayRows.length - 1].totalMin : 0;
-      nowMin = Math.max(0, Math.min(timerElapsedMs() / 60000, cap));
+      alarmNowMin = Math.max(0, timerElapsedMs() / 60000);
+      nowMin = Math.min(alarmNowMin, cap);
     }
 
     renderLadder(displayRows, activeIndex);
     renderChart(displayRows, state.params, nowMin);
     renderTimerUI(displayRows, activeIndex, finished);
-    maybeAlarm(displayRows, activeIndex, nowMin, finished);
+    maybeAlarm(displayRows, activeIndex, alarmNowMin, finished);
   }
 
   // Chamado a cada 500ms enquanto o cronômetro roda: só atualiza o relógio,
@@ -667,16 +684,49 @@
     const activeIndex = activeStepIndex(rawLength);
     const finished = activeIndex >= rawLength && rawLength > 0;
     const cap = rows.length ? rows[rows.length - 1].totalMin : 0;
-    const nowMin = activeIndex >= 0 ? Math.max(0, Math.min(timerElapsedMs() / 60000, cap)) : null;
+    const alarmNowMin = activeIndex >= 0 ? Math.max(0, timerElapsedMs() / 60000) : null;
     renderTimerUI(rows, activeIndex, finished);
-    updatePlayhead(nowMin);
-    maybeAlarm(rows, activeIndex, nowMin, finished);
+    updatePlayhead(alarmNowMin === null ? null : Math.min(alarmNowMin, cap));
+    maybeAlarm(rows, activeIndex, alarmNowMin, finished);
+  }
+
+  // O horário real de cada etapa (timer.actualStepEndMin) é o único dado
+  // que a ferramenta guarda e nenhuma outra do mercado guarda — mas ele
+  // morria sem saída nenhuma: nem no Exportar JSON, nem num resumo ao
+  // terminar (achado N7). A taxa de aquecimento é um campo que a pessoa
+  // chuta (°C/min do próprio fogo/resistência, nunca medido); comparando o
+  // Δ°C previsto de cada etapa de aquecimento (reconstruído do próprio
+  // plano: duração × taxa configurada, exato por construção) contra o
+  // tempo REAL que ela levou, dá pra devolver a taxa medida do equipamento
+  // de quem brassou — o dado que faltava pro T5.
+  function heatingRateSummary() {
+    const rawRows = state.rows || [];
+    const rate = state.params && state.params.heatingRate;
+    if (!rate || timer.actualStepEndMin.length < rawRows.length) return "";
+    let totalDeltaTemp = 0;
+    let totalRealMin = 0;
+    rawRows.forEach((row, i) => {
+      if (!/aquecimento/i.test(row.label)) return;
+      const realMin = timer.actualStepEndMin[i] - (i > 0 ? timer.actualStepEndMin[i - 1] : 0);
+      totalDeltaTemp += row.duration * rate;
+      totalRealMin += realMin;
+    });
+    if (totalRealMin <= 0) return "";
+    const realRate = totalDeltaTemp / totalRealMin;
+    const deviationPct = ((realRate - rate) / rate) * 100;
+    if (Math.abs(deviationPct) < 1) {
+      return ` · <span class="timer-drift">aquecimento real bateu com o configurado (${fmtNum(rate)}°C/min)</span>`;
+    }
+    const cls = deviationPct < 0 ? "is-late" : "is-early";
+    const word = deviationPct < 0 ? "mais lento" : "mais rápido";
+    return ` · <span class="timer-drift ${cls}">aquecimento real: ${fmtNum(realRate)}°C/min — ${fmtNum(Math.abs(deviationPct))}% ${word} que o configurado (${fmtNum(rate)}°C/min)</span>`;
   }
 
   let lastAnnouncedStep = undefined;
   function renderTimerUI(rows, activeIndex, finished) {
     el.timerClock.textContent = fmtClock(timerElapsedMs() / 1000);
     el.timerPanel.classList.toggle("is-running", timer.running);
+    updateAudioWarning();
     el.timerToggleBtn.textContent = finished ? "Nova brassagem" : timer.running ? "Pausar" : (timer.accumulatedMs > 0 ? "Continuar" : "Iniciar");
     el.timerArriveBtn.disabled = !(activeIndex >= 0 && !finished);
     // A etapa ativa muda raramente; o "faltam Xmin" muda 2x/s (tickTimer).
@@ -702,7 +752,7 @@
       ? ` · <span class="timer-drift ${driftMin > 0 ? "is-late" : "is-early"}">${driftMin > 0 ? "+" : ""}${fmtNum(driftMin)}min vs. previsto</span>`
       : "";
     if (finished) {
-      el.timerStepLabel.innerHTML = `<strong>Programa concluído</strong>${driftBadge}`;
+      el.timerStepLabel.innerHTML = `<strong>Programa concluído</strong>${driftBadge}${heatingRateSummary()}`;
     } else if (rows.length && activeIndex >= 0) {
       const row = rows[activeIndex];
       const remainingMin = row.totalMin - timerElapsedMs() / 60000;
@@ -1271,6 +1321,18 @@
       if (Ctor) audioCtx = new Ctor();
     }
     if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+    updateAudioWarning();
+  }
+
+  // Um toast some sozinho em 2,2s e divide o mesmo elemento com o aviso de
+  // troca de método e o de nova versão — quem olhar pro celular 3s depois
+  // de recarregar a página (com a brassagem ainda rodando) não vê mais
+  // nada dizendo que o som está desligado, e fica sem alarme pro resto da
+  // brassagem sem saber (achado N6). Uma pílula fixa no painel do
+  // cronômetro, em vez de um aviso passageiro: aparece enquanto o
+  // cronômetro roda sem áudio pronto, some sozinha no primeiro toque.
+  function updateAudioWarning() {
+    el.audioWarning.hidden = !(timer.running && !audioCtx);
   }
   function fireAlarm() {
     if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
@@ -1379,7 +1441,15 @@
 
   el.exportBtn.addEventListener("click", () => {
     const currentByMethod = {};
-    for (const m of METHODS) currentByMethod[m.id] = loadCurrentParams(m.id);
+    // Só o registro de quem já confirmou pelo menos uma etapa — currentByMethod
+    // guarda config pra todo mundo, mas exportar um cronômetro zerado (sem
+    // nenhum "Cheguei" apertado) não tem informação nenhuma pra dar.
+    const timerByMethod = {};
+    for (const m of METHODS) {
+      currentByMethod[m.id] = loadCurrentParams(m.id);
+      const t = loadTimer(m.id);
+      if (t.actualStepEndMin.length > 0) timerByMethod[m.id] = { actualStepEndMin: t.actualStepEndMin };
+    }
     const payload = {
       app: "decoccao",
       version: 1, // versão do FORMATO do arquivo (schema), não do app — ver appVersion
@@ -1387,6 +1457,7 @@
       exportedAt: new Date().toISOString(),
       currentByMethod,
       presets: loadPresets(),
+      timerByMethod,
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -1465,25 +1536,42 @@
   function init() {
     applyTheme(localStorage.getItem(THEME_KEY) || "system");
     el.footerVersion.textContent = `v${window.APP_VERSION || "?"}`;
+
+    // Uma brassagem em andamento é mais importante que a última aba visitada:
+    // sem isso, trocar de método pra comparar uma temperatura e reabrir a
+    // página (ou aceitar "Nova versão · Recarregar") fazia a brassagem
+    // continuar rodando no armazenamento sem nenhum indício na tela —
+    // relógio, wake lock e alarme, todos inacessíveis (achado N3).
+    const rodando = METHODS.find((m) => {
+      const stored = safeParse(localStorage.getItem(TIMER_KEY(m.id)), null);
+      return stored && stored.running;
+    });
+    if (rodando && rodando.id !== state.methodId) {
+      state.methodId = rodando.id;
+      localStorage.setItem(LAST_METHOD_KEY, rodando.id);
+    }
+
     state.params = loadCurrentParams(state.methodId);
     timer = loadTimer(state.methodId);
     renderTabs();
     renderForm();
     renderPresetOptions();
-    renderResults();
 
     // Uma sessão restaurada (reload no meio da brassagem — acidental, o
     // celular descartou a aba, ou o próprio toast "Nova versão ·
     // Recarregar") mantinha relógio/etapa/atraso certinhos, mas perdia o
     // wake lock e o alarme sonoro: os dois só eram pedidos no clique de
     // "Iniciar"/"Cheguei", nunca no carregamento da página (achado P2).
+    // Roda antes do primeiro renderResults() — que já pode disparar
+    // maybeAlarm() se a etapa atual já estiver vencida desde antes do
+    // reload — pra pílula de "som desativado" (N6) já estar visível nesse
+    // primeiro instante, não só depois de um segundo render.
     if (timer.running) {
       requestWakeLock(); // não exige gesto do usuário, diferente do áudio
-      if (!audioCtx) {
-        toast("Toque na tela pra ativar o alarme sonoro.");
-        document.addEventListener("click", ensureAudioCtx, { once: true });
-      }
+      if (!audioCtx) document.addEventListener("click", ensureAudioCtx, { once: true });
     }
+
+    renderResults();
 
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {

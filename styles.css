@@ -8,10 +8,17 @@
   --copper: #b5602c;
   --copper-strong: #8f4a22;
   --amber: #c98a1f;
+  --amber-strong: #8a5d00;
   --steel: #386079;
   --steel-strong: #24475c;
   --danger: #a53a2a;
+  --danger-strong: #a53a2a;
   --focus: #b5602c;
+  /* -strong: a cor pura das pílulas .temp-pill--volume/--alarm sobre o
+     próprio fundo (a mesma cor a 22% de opacidade) mede menos de 4,5:1 em
+     metade das combinações tema×pílula (achado N5) — --amber falha no
+     claro, --danger falha no escuro (ver abaixo). -strong é a versão que
+     passa nos dois lados, seguindo o padrão que --steel-strong já usava. */
   /* Faixas de enzima do gráfico (N8): saturadas o bastante pra passar
      4,5:1 (AA) como TEXTO da legenda contra --surface claro. O preenchimento
      do SVG usa esses mesmos tons a 14% de opacidade — aí não precisa do
@@ -37,9 +44,11 @@
     --copper: #d17f3f;
     --copper-strong: #e69657;
     --amber: #e0a83f;
+    --amber-strong: #e0a83f;
     --steel: #6fa0bd;
     --steel-strong: #8fb9d3;
     --danger: #d66a52;
+    --danger-strong: #e8907a;
     --focus: #e0a83f;
     --zone-glucanase: #6495ed;
     --zone-protease: #ba78d1;
@@ -60,9 +69,11 @@
   --copper: #d17f3f;
   --copper-strong: #e69657;
   --amber: #e0a83f;
+  --amber-strong: #e0a83f;
   --steel: #6fa0bd;
   --steel-strong: #8fb9d3;
   --danger: #d66a52;
+  --danger-strong: #e8907a;
   --focus: #e0a83f;
   --zone-glucanase: #6495ed;
   --zone-protease: #ba78d1;
@@ -547,6 +558,16 @@ button, select, input {
 .timer-drift.is-late { color: var(--danger); }
 .timer-drift.is-early { color: var(--steel); }
 
+.audio-warning {
+  margin: 0.3rem 0 0;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--danger-strong);
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
 .timer-controls {
   display: flex;
   gap: 0.4rem;
@@ -716,10 +737,10 @@ button, select, input {
 }
 .temp-pill--mash { background: color-mix(in srgb, var(--steel) 18%, transparent); color: var(--steel-strong); }
 .temp-pill--boil { background: color-mix(in srgb, var(--copper) 18%, transparent); color: var(--copper-strong); }
-.temp-pill--volume { background: color-mix(in srgb, var(--amber) 22%, transparent); color: var(--amber); font-weight: 700; }
+.temp-pill--volume { background: color-mix(in srgb, var(--amber) 22%, transparent); color: var(--amber-strong); font-weight: 700; }
 .temp-pill--return { background: color-mix(in srgb, var(--steel) 22%, transparent); color: var(--steel-strong); }
 .temp-pill--empty { color: var(--text-dim); background: transparent; }
-.temp-pill--alarm { background: color-mix(in srgb, var(--danger) 22%, transparent); color: var(--danger); }
+.temp-pill--alarm { background: color-mix(in srgb, var(--danger) 22%, transparent); color: var(--danger-strong); }
 .ladder-volume small.is-alarm { color: var(--danger); font-weight: 600; }
 
 @media (max-width: 620px) {
