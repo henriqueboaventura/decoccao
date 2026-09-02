@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const { METHODS, getMethod, defaultParams, computeSchedule, totalMashVolumeL } = window.Decoccao;
+  const { METHODS, getMethod, defaultParams, sanitizeParams, computeSchedule, totalMashVolumeL } = window.Decoccao;
   const STORAGE_PREFIX = "decoccao:v1";
   const CURRENT_KEY = (id) => `${STORAGE_PREFIX}:current:${id}`;
   const PRESETS_KEY = `${STORAGE_PREFIX}:presets`;
@@ -100,22 +100,11 @@
     localStorage.setItem(PRESETS_KEY, JSON.stringify(presets));
   }
 
-  // Clampa cada campo pro [min,max] do paramSchema, com fallback pro
-  // default quando o valor nem é um número. O clamp do input (evento
-  // "input" em renderForm) só protege quem digita — um valor salvo em
-  // versão antiga do app, uma predefinição, ou um JSON importado de outra
-  // pessoa passa batido por ele e chega direto no motor de cálculo. Único
-  // ponto de saneamento pra todo mundo que lê parâmetros de fora do
-  // teclado: autosave, predefinições e importação de JSON.
-  function sanitizeParams(method, params) {
-    const out = { ...defaultParams(method), ...params };
-    for (const p of method.paramSchema) {
-      const v = Number(out[p.key]);
-      out[p.key] = Number.isFinite(v) ? Math.min(p.max, Math.max(p.min, v)) : p.default;
-    }
-    return out;
-  }
-
+  // sanitizeParams agora vive em methods.js (pura, sem DOM — movida pra
+  // ficar testável em tests/sanitize.test.js). Único ponto de saneamento
+  // pra todo mundo que lê parâmetros de fora do teclado: autosave,
+  // predefinições e importação de JSON — o clamp do input (evento "input"
+  // em renderForm) só protege quem digita.
   function loadCurrentParams(methodId) {
     const method = getMethod(methodId);
     const stored = safeParse(localStorage.getItem(CURRENT_KEY(methodId)), null);

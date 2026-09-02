@@ -6,6 +6,45 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 versionamento segue [SemVer](https://semver.org/lang/pt-BR/) (`MAJOR.MINOR.PATCH`).
 A versão atual fica em `version.js` e aparece no rodapé do app.
 
+## [1.11.1] — 2026-09-02
+
+### Adicionado
+- 33 testes novos, minerados dos PDFs das cinco primeiras rodadas de
+  auditoria (Raio-X, Segunda a Quinta Leitura — mantidos fora do
+  repositório):
+  - `sanitizeParams` **movida de `app.js` pra `methods.js`** — era
+    pura (só dependia de `defaultParams`), mas vivia do lado errado da
+    linha entre motor e interface, fora do alcance de qualquer teste.
+    `tests/sanitize.test.js` (29 testes): todo campo grampeado no seu
+    `[min,max]`, valores não numéricos caindo no default, e os
+    mesmos casos de contorno que o Raio-X (§3.3) e a Segunda Leitura
+    (N1) rodaram na ferramenta manualmente (água negativa, taxa de
+    aquecimento zero) — a defesa contra os dois achados C1/N1
+    originais, agora permanente.
+  - `physics.test.js`: trava contra a fórmula ADITIVA do bug C1
+    original (12,92 L) — se a fração de uma puxada em partes voltar a
+    ser somada em vez de substituída, o teste falha antes de precisar
+    de uma nova auditoria pra pegar; a Dupla Moderna e a Dupla
+    Aprimorada conferidas uma contra a outra (mesma física, mesma
+    mostura, mesma viagem térmica 35°C→66°C, têm que dar o mesmo
+    volume); a conta publicada do achado N9 (divisão em duas adições,
+    4,33 L/6,81 L) reconstruída de forma independente; o Boaventura
+    com os patamares reais (achado T6) batendo com a correção
+    publicada.
+- README: seção "Testes" documenta os fixtures como vindos das
+  auditorias externas (não do próprio motor), e registra a maior
+  lacuna real da suíte hoje — a lógica do cronômetro/interface
+  (`app.js`) não é testada, porque hoje vive presa a uma IIFE com DOM;
+  fechar isso é um projeto à parte, não uma adição rápida.
+
+### Removido
+- README: todas as referências à planilha original (`Cálculos de
+  decocção .xlsx`) — a ferramenta se distanciou dela o bastante pra
+  essa moldura de "recriar a planilha" não descrever mais o projeto.
+  A "Nota sobre a planilha original" (dois bugs históricos dela, já
+  corrigidos há muito) saiu; o arquivo `.xlsx` continua no repositório,
+  só não é mais citado no README.
+
 ## [1.11.0] — 2026-09-02
 
 Quinta leitura, fechada por completo: os oito achados da quarta
@@ -509,7 +548,8 @@ de volume.
 - Autosave no `localStorage`, predefinições nomeadas (ocultas da UI por
   ora), exportar/importar configuração em JSON.
 
-[1.11.0]: https://github.com/henriqueboaventura/decoccao/compare/a364f74...main
+[1.11.1]: https://github.com/henriqueboaventura/decoccao/compare/d9c32a4...main
+[1.11.0]: https://github.com/henriqueboaventura/decoccao/compare/a364f74...d9c32a4
 [1.10.0]: https://github.com/henriqueboaventura/decoccao/compare/f95cf31...a364f74
 [1.9.1]: https://github.com/henriqueboaventura/decoccao/compare/75dccf1...f95cf31
 [1.9.0]: https://github.com/henriqueboaventura/decoccao/compare/f7ffffd...75dccf1

@@ -788,6 +788,21 @@ function defaultParams(method) {
   return out;
 }
 
+// Movida de app.js: pura (só depende de defaultParams, acima), sem nada de
+// DOM — vivia isolada da suíte de testes por estar no lado errado da linha
+// entre motor e interface. É a defesa contra os dois achados C1/N1 das
+// duas primeiras leituras: um valor fora de [min,max] (digitado, salvo em
+// versão antiga, ou importado de um JSON de fora) tem que ser sempre
+// grampeado antes de entrar em computeSchedule — nunca repassado cru.
+function sanitizeParams(method, params) {
+  const out = { ...defaultParams(method), ...params };
+  for (const p of method.paramSchema) {
+    const v = Number(out[p.key]);
+    out[p.key] = Number.isFinite(v) ? Math.min(p.max, Math.max(p.min, v)) : p.default;
+  }
+  return out;
+}
+
 function computeSchedule(method, params) {
   // Pseudo-decocção não puxa nem devolve nada — é uma panela só, física de
   // mistura direta, não balanço de energia entre duas tinas — então não
@@ -805,6 +820,6 @@ function computeSchedule(method, params) {
 // o arquivo inteiro num sandbox de vm só pra ganhar acesso às funções (era
 // assim que scripts/verify_pseudo_decoccao.js fazia antes deste export
 // existir).
-const DecoccaoExports = { METHODS, getMethod, defaultParams, computeSchedule, totalMashVolumeL, THERMAL_EQUIV_L_PER_KG };
+const DecoccaoExports = { METHODS, getMethod, defaultParams, sanitizeParams, computeSchedule, totalMashVolumeL, THERMAL_EQUIV_L_PER_KG };
 if (typeof window !== "undefined") window.Decoccao = DecoccaoExports;
 if (typeof module !== "undefined" && module.exports) module.exports = DecoccaoExports;

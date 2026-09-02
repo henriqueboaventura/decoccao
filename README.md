@@ -1,7 +1,9 @@
 # Decocção — Calculadora de Programas de Mostura
 
-App estático (PWA) que reconstrói a planilha `Cálculos de decocção .xlsx` em uma
-ferramenta usável no celular ou no computador, sem depender de Excel.
+App estático (PWA) que calcula programas de mostura por decocção — e por
+pseudo-decocção — direto no navegador: divisão de puxadas por balanço de
+energia, cronograma completo, gráfico de temperatura x tempo e cronômetro
+de brassagem por evento.
 
 ## O que faz
 
@@ -11,10 +13,10 @@ ferramenta usável no celular ou no computador, sem depender de Excel.
   para preencher métodos que faltavam — e **Pseudo-decocção**, que não é
   decocção: é o *cereal mash*/*double-mash system* (Briggs et al., Kunze,
   Narziß, Brücklmeier), uma panela só sem puxada nem retorno.
-- Todos os parâmetros da planilha (temperaturas, tempos de rampa, taxa de
+- Todos os parâmetros de cada método (temperaturas, tempos de rampa, taxa de
   aquecimento, tempos de transferência etc.) ficam editáveis em formulário.
 - A tabela de passo a passo, o tempo total e o gráfico de temperatura x tempo
-  são recalculados na hora, reproduzindo as fórmulas originais da planilha
+  são recalculados na hora, a partir do balanço de energia de cada método
   (ver `methods.js`). O gráfico marca cada mudança de temperatura com um
   ponto e o respectivo horário no eixo X.
 - Cronômetro de brassagem por evento: iniciar/pausar/resetar e confirmar
@@ -63,9 +65,19 @@ O que a suíte cobre:
   (`d = (T2-T1)/(Tb-T1)`) reconstruído e conferido contra o que o motor
   calcula, pra qualquer método e não só os defaults; a conservação de
   energia em puxadas devolvidas em mais de uma parte (T1 sempre fixo na
-  puxada original); o Hochkurz com fervura curta nas duas decocções
-  (Narziß); invariantes estruturais nos 8 métodos (schema
+  puxada original, travado contra a fórmula aditiva do bug original —
+  achado C1 do Raio-X — e conferido pela conta publicada do achado N9);
+  a Dupla Moderna e a Dupla Aprimorada concordando no mesmo volume pra
+  mesma viagem térmica; o Boaventura com os patamares reais batendo com
+  a correção do achado T6; o Hochkurz com fervura curta nas duas
+  decocções (Narziß); invariantes estruturais nos 8 métodos (schema
   autoconsistente, cronograma monotônico, sem NaN).
+- **`sanitize.test.js`** — `sanitizeParams` (movida de `app.js` pra
+  `methods.js` justamente pra ficar testável): todo campo grampeado no
+  seu próprio `[min,max]`, valores não numéricos caindo no default, e
+  os casos de contorno exatos que o Raio-X e a Segunda Leitura rodaram
+  na ferramenta à mão (água negativa, taxa de aquecimento zero, campo
+  ausente de uma versão antiga do app).
 - **`mash-cooling.test.js`** — o parâmetro de perda térmica em espera
   (T3): padrão 0 é sempre um no-op; ligado, o volume de puxada cresce
   monotonicamente; o tooltip de "patamar real" sobrevive (achado Q2).
@@ -73,7 +85,27 @@ O que a suíte cobre:
   tabelas de passo a passo completas da especificação da
   Pseudo-decocção, os dois diagramas publicados reproduzidos pela
   fórmula direta, a constante térmica travada contra regressão, o teto
-  da taxa escalada (achado Q10) e o guarda de alvo inalcançável (V2).
+  da taxa escalada (achado Q10), a evaporação da 1ª parcela (achado
+  Q5) e o guarda de alvo inalcançável (V2).
+
+Os fixtures numéricos de `regression.test.js`/`physics.test.js` vêm
+das cinco rodadas de auditoria externa deste projeto (os PDFs "Raio-X",
+"Segunda" a "Quinta Leitura da Calculadora", mantidos fora do
+repositório) — cada valor golden é um número que uma leitura
+independente conferiu à mão contra a literatura, não um número que o
+próprio motor gerou pra si mesmo.
+
+**Fora do escopo desta suíte, por enquanto:** a lógica do cronômetro
+de brassagem e boa parte da interface (`app.js`) — o alarme repetindo,
+o cálculo de atraso/adiantamento (`effectiveRows`), a decisão de
+mostrar a panela de fervura no gráfico (`annotateDisplayBoil`), as
+faixas de severidade de aviso — são funções puras, mas hoje vivem
+dentro da mesma IIFE que manipula o DOM, sem exportação própria.
+Boa parte dos achados críticos das rodadas 3-5 (P1-P10, N1-N8, Q1-Q13)
+foi justamente nessa camada, não em `methods.js` — é a maior lacuna
+real da suíte hoje. Fechar isso pede extrair essas funções pra um
+módulo sem DOM (como `sanitizeParams` acima) antes de testar; é um
+projeto à parte, não uma adição de meia hora.
 
 **Antes de publicar uma nova versão** (bump em `version.js` +
 `CHANGELOG.md`), rode `npm test` — o CI (`.github/workflows/test.yml`)
@@ -83,16 +115,17 @@ sendo o que garante isso.
 
 Escrevendo um teste novo: prefira valores conferidos à mão ou contra
 uma fonte externa (a própria especificação em PDF, um livro-texto, uma
-planilha) a copiar o que o motor já devolve — testar "o código bate com
-o código" não pega regressão nenhuma.
+tabela publicada) a copiar o que o motor já devolve — testar "o código
+bate com o código" não pega regressão nenhuma.
 
 ## Estrutura
 
 - `index.html`, `styles.css`, `app.js` — interface.
 - `methods.js` — motor de cálculo: schema de parâmetros + fórmulas de cada
-  método, extraídos célula a célula da planilha original. Exporta tanto
-  pra `window.Decoccao` (navegador) quanto por `module.exports` (Node —
-  testes e scripts).
+  método, verificadas contra a literatura de brassagem (Kunze, Narziß,
+  Briggs et al., Brücklmeier, Braukaiser Wiki) e conferidas em `tests/`.
+  Exporta tanto pra `window.Decoccao` (navegador) quanto por
+  `module.exports` (Node — testes e scripts).
 - `tests/` — suíte de testes unitários (`node:test`, zero dependências).
   Ver "Testes" acima.
 - `scripts/verify_pseudo_decoccao.js` — script de conferência da
@@ -101,7 +134,6 @@ o código" não pega regressão nenhuma.
 - `manifest.webmanifest`, `service-worker.js`, `icons/` — PWA.
 - `version.js` — versão atual do app (única fonte, lida pelo rodapé e pelo
   service worker). Ver `CHANGELOG.md`.
-- `Cálculos de decocção .xlsx` — planilha original, mantida como referência.
 
 ## Versionamento
 
@@ -109,21 +141,6 @@ Segue [SemVer](https://semver.org/lang/pt-BR/). A versão atual está em
 `version.js` e aparece no rodapé do app. Toda mudança relevante vai pro
 `CHANGELOG.md`. Bump de versão troca o nome do cache do service worker
 automaticamente, então nunca precisa lembrar de fazer isso à mão.
-
-## Nota sobre a planilha original
-
-Na aba "Tripla Tradicional" da planilha, a célula da "Terceira decocção"
-(`C22`) referenciava por engano o tempo da 1ª decocção (10 min) em vez do
-tempo próprio da 3ª decocção que já existia na planilha, não utilizado
-(célula `C30`, 5 min). Esse app usa o valor correto (5 min, editável no
-campo "Tempo da 3ª decocção"), o que reduz o tempo total desse método em
-5 minutos frente à planilha original.
-
-A "Simples" foi ajustada para seguir o "Single Decoction" do Braukaiser
-Wiki (rampa de proteína 53-55°C → decocção leva a mostura à rampa de
-sacarificação 65-68°C, ~45min → aquecimento direto até o mash-out),
-diferente da versão original da planilha (que usava rampas de β/α-amilase
-a 62/72°C).
 
 ## Métodos cruzados com o Braukaiser Wiki
 
