@@ -24,7 +24,11 @@
     mashVolumeWrap: document.getElementById("mashVolumeWrap"),
     mashVolume: document.getElementById("mashVolume"),
     maxPullWrap: document.getElementById("maxPullWrap"),
+    maxPullLabel: document.getElementById("maxPullLabel"),
     maxPull: document.getElementById("maxPull"),
+    resultsNormal: document.getElementById("resultsNormal"),
+    pseudoUnreachable: document.getElementById("pseudoUnreachable"),
+    pseudoUnreachableText: document.getElementById("pseudoUnreachableText"),
     timerPanel: document.querySelector(".timer-panel"),
     timerClock: document.getElementById("timerClock"),
     timerStepLabel: document.getElementById("timerStepLabel"),
@@ -363,6 +367,24 @@
     { test: (p) => p.key === "mashInTemp", text: "Temperatura da mostura logo depois de misturar a água com o malte moído (Mash In) — o ponto de partida do programa, antes de qualquer rampa ou decocção." },
     { test: (p) => p.key === "heatingRate", text: "Velocidade de aquecimento considerada pro seu fogo/resistência, em °C por minuto. Usada só pra estimar a duração das etapas de aquecimento — não muda volumes nem temperaturas do programa." },
     { test: (p) => p.key === "mashCoolingRate", text: "Quanto a mostura principal esfria por minuto enquanto fica parada esperando a decocção (puxada, fervendo, voltando), em °C por minuto. Padrão 0: tina com aquecimento que mantém a temperatura, ou perda desprezível. Se sua tina esfria de verdade nesse meio-tempo, ajustar aqui aumenta o volume calculado pra puxar — compensa a perda de calor real." },
+    // Pseudo-decoccão: regras específicas ANTES das genéricas de baixo —
+    // fervuraTemp/decoctionTime/transferTime são reaproveitados de outros
+    // métodos, mas lá o texto fala de "puxada"/"retorno"/"tina de
+    // fervura", que não existem aqui (é uma panela só). group==="Parcela"
+    // é exclusivo deste método, então serve pra distinguir sem precisar
+    // saber o id do método.
+    { test: (p) => p.key === "ambientTemp", text: "Temperatura da água e do malte ANTES de entrarem na mistura — geralmente a temperatura ambiente ou da torneira. Entra direto na conta de balanço térmico: é ela que decide quanta água/malte a 2ª parcela consegue esfriar." },
+    { test: (p) => p.key === "grainSplitPct", text: "Fração do malte total que vai pra 1ª parcela (a que ferve). O resto (malte + água) entra depois, já frio. É o único controle que você tem sobre a espessura da 1ª parcela — quanto maior essa fração, mais água sobra pra ela, mais rala fica." },
+    { test: (p) => p.group === "Parcela" && p.key === "liquefacaoTemp", text: "Temperatura do repouso de liquefação da 1ª parcela, antes da fervura — deixa o amido dela solto o bastante pra não empapelar/queimar na panela." },
+    { test: (p) => p.key === "liquefacaoTime", text: "Duração do repouso de liquefação da 1ª parcela, antes dela ir à fervura." },
+    { test: (p) => p.group === "Parcela" && p.key === "fervuraTemp", text: "Temperatura REAL da fervura da 1ª parcela — diferente da decocção clássica, aqui não é uma convenção de balanço térmico (lá o valor padrão de 90-100°C é só um número de fórmula): é a temperatura de verdade que a panela atinge, porque é a mesma panela que depois recebe a água e o malte restantes." },
+    { test: (p) => p.group === "Parcela" && p.key === "decoctionTime", text: "Duração da fervura da 1ª parcela — é o tempo que gera a reação de Maillard e rompe a parede celular do malte fervido, a base física do método." },
+    { test: (p) => p.group === "Parcela" && p.key === "transferTime", text: "Tempo de cada adição (a da água restante e a do malte restante) — são duas adições na mesma panela, não uma transferência entre tinas." },
+    { test: (p) => p.key === "proteaseTemp", text: "Temperatura da rampa de protease, logo depois da 2ª parcela entrar. Zerar o campo \"Rampa de protease\" (ao lado) pula essa etapa inteira — nesse caso o alvo da mistura vira a temperatura da rampa de β-amilase, não esta aqui." },
+    { test: (p) => p.key === "betaTemp", text: "Temperatura da rampa de β-amilase (produz mais açúcar fermentável, corpo mais leve). Se a rampa de protease estiver zerada, é ESTE valor que a mistura da água+malte restantes precisa atingir — a conta resolve o quanto de água entra na 1ª parcela pra chegar exatamente aqui." },
+    { test: (p) => p.key === "betaTime", text: "Duração da rampa de β-amilase." },
+    { test: (p) => p.key === "alfaTemp", text: "Temperatura da rampa de α-amilase (produz açúcares menos fermentáveis, mais corpo/dextrinas)." },
+    { test: (p) => p.key === "alfaTime", text: "Duração da rampa de α-amilase." },
     { test: (p) => p.key === "transferTime", text: "Tempo estimado pra transferir a mostura entre a tina de mostura e a tina de fervura, tanto na puxada quanto no retorno da decocção. É só uma referência de tempo; ajuste pro seu equipamento." },
     { test: (p) => /SaccTemp$/.test(p.key), text: "Temperatura em que a porção puxada descansa, na tina de fervura, antes de ir à fervura plena — dá tempo pras enzimas de conversão de amido agirem nessa fração antes de morrerem na fervura." },
     { test: (p) => p.key === "saccTime", text: "Duração do descanso de sacarificação da porção puxada, na tina de fervura, antes dela seguir pra fervura plena." },
@@ -509,6 +531,37 @@
     return text;
   }
 
+  // Espessura da 1ª parcela (V1 da especificação da pseudo-decocção) — não
+  // é um campo que o usuário controla direto, é o que sobra depois que o
+  // alvo da mistura decide quanto de água fica pra 2ª parcela. Piso
+  // publicado pra qualquer mostura levada à fervura: 2,5 L/kg (Brücklmeier
+  // p. 146; Braukaiser dá 2-2,5 L/kg pra decocção comum), 3,0 é mais
+  // confortável. Abaixo de 2,5 o risco de queimar no fundo da panela é
+  // alto — por isso "alarm", não só "big" como na puxada normal.
+  function pseudoEspessuraSeverity(esp) {
+    if (esp < 2.5) return "alarm";
+    if (esp < 3.0) return "warn";
+    return "normal";
+  }
+
+  function pseudoParcelaHintText(r, severity) {
+    let text = "Divisão do malte e da água entre as duas parcelas — a 1ª parcela é a que ferve sozinha; a fração de malte é o " +
+      "campo \"% do malte na 1ª parcela\", mas a água NÃO é um campo direto: ela é calculada a partir do alvo da 1ª rampa, pra " +
+      "acertar a temperatura exatamente quando o malte restante entrar. O resultado é a espessura desta parcela.";
+    if (severity === "alarm") {
+      text += ` Atenção: ${fmtNum(r.pseudoEspessura)} L/kg está abaixo do piso de 2,5 L/kg publicado pra qualquer mostura levada ` +
+        "à fervura — risco alto de queimar no fundo da panela. Baixe a fração de malte da 1ª parcela pra engrossar.";
+    } else if (severity === "warn") {
+      text += ` Atenção: ${fmtNum(r.pseudoEspessura)} L/kg está abaixo do confortável (3,0 L/kg) — mexa sem parar durante a fervura desta parcela.`;
+    }
+    if (r.pseudoSplitPct > 80) {
+      text += " E como essa fração já passa de 80% do malte total, só uma fatia pequena do lote chega intacta com enzimas na 2ª parcela — considere baixar.";
+    } else if (r.pseudoSplitPct < 30) {
+      text += " Com uma fração tão pequena, o efeito de sabor da fervura (Maillard, ruptura de parede celular) tende a ser pouco perceptível — considere aumentar.";
+    }
+    return text;
+  }
+
   // O campo "Rampa de X" só pede o repouso ADICIONAL desta etapa. Enquanto
   // a decocção seguinte é puxada, aquecida, sacarifica e ferve, a mostura
   // principal fica parada nessa mesma temperatura — e esse tempo não
@@ -614,6 +667,30 @@
   function renderResults() {
     const method = getMethod(state.methodId);
     const rows = computeSchedule(method, state.params);
+
+    // V2 da especificação da pseudo-decocção: nem W1=0 nem W1=W chegam no
+    // alvo pedido — a fórmula devolveria água negativa ou maior que o
+    // total, um "plano" sem sentido físico. Não renderiza a escada nesse
+    // caso (nem o resto: cronômetro, gráfico), mostra o alvo mínimo e
+    // máximo alcançáveis, que a mesma fórmula dá de graça fixando W1 nos
+    // dois extremos (ver methods.js).
+    if (rows.pseudoUnreachable) {
+      const u = rows.pseudoUnreachable;
+      el.pseudoUnreachableText.textContent =
+        `Com os parâmetros atuais, a mistura da água e do malte restantes nunca chega a ${fmtNum(u.target)}°C — ` +
+        `o alcançável vai de ${fmtNum(u.minTarget)}°C a ${fmtNum(u.maxTarget)}°C. ` +
+        (u.usingProtease
+          ? "Baixe a temperatura da rampa de protease, suba a temperatura ambiente considerada, ou mude a fração de malte na 1ª parcela."
+          : "Baixe a temperatura da rampa de β-amilase, suba a temperatura ambiente considerada, ou mude a fração de malte na 1ª parcela.");
+      el.pseudoUnreachable.hidden = false;
+      el.resultsNormal.hidden = true;
+      state.rows = rows;
+      state.displayRows = rows;
+      return;
+    }
+    el.pseudoUnreachable.hidden = true;
+    el.resultsNormal.hidden = false;
+
     const total = rows.length ? rows[rows.length - 1].totalMin : 0;
     state.rows = rows;
     state.total = total;
@@ -628,16 +705,31 @@
       "É o volume de referência usado pra calcular quanto puxar em cada decocção."
     );
 
-    const pulls = rows.filter((r) => r.decoctionVolumeL !== undefined);
-    const maxPullL = pulls.length ? Math.max(...pulls.map((r) => r.decoctionVolumeL)) : 0;
-    const minPanelaL = maxPullL * 1.25;
-    el.maxPull.textContent = pulls.length ? `${fmtNum(maxPullL)} L` : "–";
-    ensureHint(el.maxPullWrap,
-      pulls.length
-        ? `Volume da maior puxada deste programa — é ela que dimensiona sua panela de fervura da decocção. ` +
-          `Recomenda-se folga de pelo menos 25% sobre esse volume, então a panela precisa ter pelo menos ${fmtNum(minPanelaL)}L.`
-        : "Este método não puxa decocção."
-    );
+    // Pseudo-decocção não puxa nada — "Maior puxada" perde o sentido.
+    // "1ª parcela" (a que ferve) é o número equivalente: dimensiona a
+    // mesma panela (especificação §7).
+    const pseudoParcelaRow = rows.find((r) => r.pseudoParcelaW1 !== undefined);
+    if (pseudoParcelaRow) {
+      el.maxPullLabel.textContent = "1ª parcela:";
+      const totalL = pseudoParcelaRow.pseudoParcelaG1 + pseudoParcelaRow.pseudoParcelaW1;
+      el.maxPull.textContent = `${fmtNum(pseudoParcelaRow.pseudoParcelaG1)} kg + ${fmtNum(pseudoParcelaRow.pseudoParcelaW1)} L`;
+      ensureHint(el.maxPullWrap,
+        `Volume da 1ª parcela (a que ferve sozinha) — é ela que dimensiona sua panela: ${fmtNum(totalL)}L no total, ` +
+        `${fmtNum(pseudoParcelaRow.pseudoEspessura)} L/kg de espessura.`
+      );
+    } else {
+      el.maxPullLabel.textContent = "Maior puxada:";
+      const pulls = rows.filter((r) => r.decoctionVolumeL !== undefined);
+      const maxPullL = pulls.length ? Math.max(...pulls.map((r) => r.decoctionVolumeL)) : 0;
+      const minPanelaL = maxPullL * 1.25;
+      el.maxPull.textContent = pulls.length ? `${fmtNum(maxPullL)} L` : "–";
+      ensureHint(el.maxPullWrap,
+        pulls.length
+          ? `Volume da maior puxada deste programa — é ela que dimensiona sua panela de fervura da decocção. ` +
+            `Recomenda-se folga de pelo menos 25% sobre esse volume, então a panela precisa ter pelo menos ${fmtNum(minPanelaL)}L.`
+          : "Este método não puxa decocção."
+      );
+    }
 
     const activeIndex = activeStepIndex(rows.length);
     const finished = activeIndex >= rows.length && rows.length > 0;
@@ -708,6 +800,7 @@
     let totalRealMin = 0;
     rawRows.forEach((row, i) => {
       if (!/aquecimento/i.test(row.label)) return;
+      if (row.pseudoScaledHeat) return; // taxa escalada, não comparável 1:1 com heatingRate
       const realMin = timer.actualStepEndMin[i] - (i > 0 ? timer.actualStepEndMin[i - 1] : 0);
       totalDeltaTemp += row.duration * rate;
       totalRealMin += realMin;
@@ -861,6 +954,51 @@
           `Volume desta adição específica — a puxada inteira (${fmtNum(pullRow.decoctionVolumeL)} L) volta em mais de uma vez, ` +
           "e o resto continua fervendo na panela até a próxima adição (veja o tooltip da puxada). " +
           `Essa parte é ${fmtNum((r.returnVolumeL / pullRow.decoctionVolumeL) * 100)}% do total puxado.`
+        );
+        hint.classList.add("hint--volume");
+        volume.appendChild(pill);
+        volume.appendChild(hint);
+      } else if (r.pseudoParcelaW1 !== undefined) {
+        // Pseudo-decocção não puxa nada — a pílula âmbar de "puxar" não
+        // existe aqui. No lugar, a 1ª parcela (a que ferve sozinha) ganha
+        // pílula própria com sua própria espessura (V1 da especificação).
+        const severity = pseudoEspessuraSeverity(r.pseudoEspessura);
+        const isAlarm = severity === "alarm";
+        const pill = document.createElement("span");
+        pill.className = "temp-pill temp-pill--volume";
+        if (isAlarm) pill.classList.add("temp-pill--alarm");
+        pill.textContent = `1ª parcela: ${fmtNum(r.pseudoParcelaG1)} kg + ${fmtNum(r.pseudoParcelaW1)} L`;
+        const hint = makeHintBtn(pseudoParcelaHintText(r, severity));
+        hint.classList.add("hint--volume");
+        if (isAlarm) hint.classList.add("hint--alarm");
+        const small = document.createElement("small");
+        if (isAlarm) small.classList.add("is-alarm");
+        small.textContent = `${fmtNum(r.pseudoEspessura)} L/kg`;
+        volume.appendChild(pill);
+        volume.appendChild(hint);
+        volume.appendChild(small);
+      } else if (r.pseudoWaterAddL !== undefined) {
+        const pill = document.createElement("span");
+        pill.className = "temp-pill temp-pill--volume temp-pill--return";
+        pill.textContent = `+${fmtNum(r.pseudoWaterAddL)} L a ${fmtNum(r.pseudoWaterAddTemp)}°C`;
+        const t1Hot = r.mash > 78;
+        const hint = makeHintBtn(
+          "A água que sobrou da divisão entra ANTES do malte — de propósito: se o malte restante caísse direto na mostura " +
+          "fervente, sem essa água na frente pra esfriar primeiro, ele chegaria perto da temperatura de fervura e as enzimas " +
+          `dele morreriam antes de converter qualquer amido. Essa mistura intermediária (só água, ainda sem o malte) chega a ${fmtNum(r.mash)}°C.` +
+          (t1Hot ? " Atenção: acima de 78°C as enzimas do malte que vem a seguir já entram acima do limite seguro — considere um alvo mais baixo." : "")
+        );
+        hint.classList.add("hint--volume");
+        if (t1Hot) hint.classList.add("hint--alarm");
+        volume.appendChild(pill);
+        volume.appendChild(hint);
+      } else if (r.pseudoMaltAddKg !== undefined) {
+        const pill = document.createElement("span");
+        pill.className = "temp-pill temp-pill--volume temp-pill--return";
+        pill.textContent = `+${fmtNum(r.pseudoMaltAddKg)} kg secos`;
+        const hint = makeHintBtn(
+          "O malte que sobrou da divisão, seco (sem água própria) — entra por último, depois da água já ter esfriado a mostura da " +
+          "temperatura de fervura até uma faixa segura. É ele que traz as enzimas de conversão do resto do lote, ainda intactas."
         );
         hint.classList.add("hint--volume");
         volume.appendChild(pill);

@@ -501,6 +501,28 @@ button, select, input {
   gap: 0.9rem;
 }
 
+/* Wrapper em volta dos 4 painéis normais (resumo/cronômetro/gráfico/
+   escada), pra poder escondê-los inteiros quando a pseudo-decocção não
+   consegue calcular um programa (V2 da especificação). display:contents
+   faz ele "desaparecer" do layout — os 4 painéis continuam filhos diretos
+   do flex de .results-panel, com o mesmo gap de sempre — só existe pra
+   dar um único hidden/[hidden] pra alternar todos de uma vez. */
+#resultsNormal { display: contents; }
+
+.pseudo-unreachable {
+  padding: 1rem 1.1rem;
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+}
+.pseudo-unreachable__title {
+  margin: 0 0 0.35rem;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: var(--danger-strong);
+}
+.pseudo-unreachable p:last-child { margin: 0; line-height: 1.5; }
+
 .summary-bar {
   display: flex;
   flex-wrap: wrap;
