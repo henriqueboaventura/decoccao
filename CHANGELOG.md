@@ -6,6 +6,20 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 versionamento segue [SemVer](https://semver.org/lang/pt-BR/) (`MAJOR.MINOR.PATCH`).
 A versão atual fica em `version.js` e aparece no rodapé do app.
 
+## [1.9.1] — 2026-09-02
+
+### Corrigido
+- **Scroll horizontal no celular**: os tooltips "?" (`.hint::after`)
+  ficam sempre no layout em `opacity:0` quando fechados (só isso
+  permite a transição suave ao abrir), com até 260px de largura
+  própria. Perto da borda direita de uma tela estreita, esse retângulo
+  invisível escapava de containers sem `overflow:hidden` (ex.:
+  `.summary-bar`) e alcançava o body — `overflow-x:hidden` só no body
+  não bastava pra conter isso. `html` agora leva a mesma regra.
+  Confirmado com um teste forçando os breakpoints mobile num wrapper de
+  375px: o `scrollWidth` do documento (`document.documentElement`)
+  caiu de 1920 (estourando) pra bater exatamente com o `clientWidth`.
+
 ## [1.9.0] — 2026-09-01
 
 ### Adicionado
@@ -362,7 +376,8 @@ de volume.
 - Autosave no `localStorage`, predefinições nomeadas (ocultas da UI por
   ora), exportar/importar configuração em JSON.
 
-[1.9.0]: https://github.com/henriqueboaventura/decoccao/compare/f7ffffd...main
+[1.9.1]: https://github.com/henriqueboaventura/decoccao/compare/75dccf1...main
+[1.9.0]: https://github.com/henriqueboaventura/decoccao/compare/f7ffffd...75dccf1
 [1.8.0]: https://github.com/henriqueboaventura/decoccao/compare/c0ceb1a...f7ffffd
 [1.7.0]: https://github.com/henriqueboaventura/decoccao/compare/d32d43a...c0ceb1a
 [1.6.0]: https://github.com/henriqueboaventura/decoccao/compare/93138c9...d32d43a

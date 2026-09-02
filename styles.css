@@ -96,14 +96,20 @@
 }
 
 * { box-sizing: border-box; }
-html, body { height: 100%; }
+/* Scroll horizontal no celular: os tooltips "?" (.hint::after) ficam
+   sempre no layout em opacity:0 quando fechados (só isso permite a
+   transição suave ao abrir), com até 260px de largura própria — perto
+   da borda direita de uma tela estreita, esse retângulo invisível
+   escapa de containers sem overflow:hidden (ex.: .summary-bar) e
+   alcança o body. overflow-x:hidden só no body não basta pra conter
+   isso em todo navegador; html precisa da mesma regra. */
+html, body { height: 100%; overflow-x: hidden; }
 body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
 }
 
 :focus-visible {
