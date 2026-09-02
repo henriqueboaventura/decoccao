@@ -12,7 +12,7 @@ const G = {
   // temperatura, ou processo rápido o bastante pra perda ser desprezível).
   // Quem brassa em tina sem aquecimento pode ligar isso pra puxar um
   // volume de decocção maior, que compense a perda real (T3).
-  MASH_COOLING_RATE: { key: "mashCoolingRate", label: "Perda térmica da mostura em espera", unit: "°C/min", group: "Geral", min: 0, max: 1, step: 0.05, default: 0 },
+  MASH_COOLING_RATE: { key: "mashCoolingRate", label: "Perda térmica enquanto a decocção está fora", unit: "°C/min", group: "Geral", min: 0, max: 1, step: 0.05, default: 0 },
   TRANSFER_TIME: { key: "transferTime", label: "Tempo de transferência", unit: "min", group: "Geral", min: 0, max: 30, step: 1 },
   SACC_TEMP: { key: "decoccao1SaccTemp", label: "Temp. de sacarificação da decocção", unit: "°C", group: "Decocções", min: 40, max: 90, step: 1 },
   SACC_TIME: { key: "saccTime", label: "Tempo de sacarificação da decocção", unit: "min", group: "Decocções", min: 0, max: 60, step: 1 },
@@ -77,9 +77,16 @@ function totalMashVolumeL(params) {
 function annotateRealPlateauTimes(rows) {
   let i = 0;
   while (i < rows.length) {
-    const temp = rows[i].mash;
-    let j = i;
-    while (j < rows.length && rows[j].mash === temp) j++;
+    let j = i + 1;
+    // Agrupa por `samePlateau` (marcado na geração da linha: "esta etapa
+    // só continua o patamar anterior, não declara um novo"), não por
+    // igualdade exata de `mash` — com a perda térmica em espera (T3)
+    // ligada, cada etapa de um mesmo patamar sai com uma temperatura
+    // ligeiramente diferente da anterior (a mostura esfria minuto a
+    // minuto), e a igualdade exata nunca mais bate: nenhum grupo se
+    // formava, e o tooltip de "tempo real do patamar" sumia inteiro nos
+    // sete métodos de decocção assim que o parâmetro era ligado (Q2).
+    while (j < rows.length && rows[j].samePlateau) j++;
     if (j - i > 1) {
       // A própria linha i é sempre a chegada naquele patamar — é ela que
       // faz `mash` virar `temp` (senão o grupo não teria começado ali).
@@ -176,6 +183,11 @@ function runSteps(steps, params) {
       totalHours: totalMin / 60,
       mash,
       boil,
+      // Identidade do patamar pra annotateRealPlateauTimes (ver ali) —
+      // marcada aqui, na geração, porque só aqui se sabe se o PASSO
+      // (não o valor final de mash, que a perda térmica pode ter mudado)
+      // é uma continuação (sameMash) ou a chegada num patamar novo.
+      samePlateau: step.mash === sameMash,
     };
     rows.push(row);
 
@@ -588,6 +600,10 @@ function buildPseudoDecoccao() {
     { key: "proteaseTemp", label: "Temp. da rampa de protease", unit: "°C", group: "Parcela", default: 52, min: 40, max: 60, step: 1 },
     { key: "betaTemp", label: "Temp. da rampa de β-amilase", unit: "°C", group: "Parcela", default: 62, min: 55, max: 68, step: 1 },
     { key: "alfaTemp", label: "Temp. da rampa de α-amilase", unit: "°C", group: "Parcela", default: 70, min: 65, max: 78, step: 1 },
+    // Padrão 0 = evaporação desprezada (panela com tampa, ou fervura curta
+    // o bastante pra não importar) — mesma filosofia do mashCoolingRate
+    // (T3): só quem liga o campo vê qualquer diferença (Q5, 5ª leitura).
+    { key: "evapRatePctPerHour", label: "Taxa de evaporação da 1ª parcela", unit: "%/h", group: "Parcela", default: 0, min: 0, max: 20, step: 1 },
     { key: "liquefacaoTime", label: "Repouso de liquefação", unit: "min", group: "Rampas", default: 15, min: 0, max: 60, step: 1 },
     // 0min pula a rampa de protease inteira — é o mesmo padrão que a Dupla
     // Tradicional já usa pra "rampa de 0 min", não um campo booleano novo.
@@ -615,10 +631,26 @@ function buildPseudoDecoccao() {
     const proteaseOn = num(params.proteaseTime) > 0;
     const T2target = proteaseOn ? num(params.proteaseTemp) : num(params.betaTemp);
 
+    // Evaporação da 1ª parcela (Q5, 5ª leitura): a fervura de decoctionTime
+    // minutos perde água de verdade antes da água/malte restantes entrarem
+    // — sem contar isso, a conta assumia que todo W1 medido ainda estava
+    // lá na hora da mistura. `f` é a fração que SOBRA depois da fervura;
+    // só afeta a parcela (o malte G1 não evapora, e a água W2 nem chegou
+    // na panela ainda).
+    const evapFrac = Math.min(1, Math.max(0, (num(params.evapRatePctPerHour) / 100) * (num(params.decoctionTime) / 60)));
+    const f = 1 - evapFrac;
+
     const Ctotal = W + cg * G;
-    const denom = Tb - Tamb;
+    // W1 é resolvido pro ALVO (T2target), não digitado — então a
+    // evaporação não pode ser aplicada DEPOIS de resolver (subtrair de um
+    // W1 já calculado sem ela dá um alvo errado): tem que entrar dentro da
+    // própria equação. Com T2 = [(W1·f+cg·G1)·Tb + (W-W1)·Tamb + cg·G2·Tamb]
+    // / [(W1·f+cg·G1) + (W-W1) + cg·G2], isolando W1 (álgebra no PR que
+    // introduziu isso — reduz exatamente à fórmula antiga quando f=1, ver
+    // tests/pseudo-decoccao.test.js):
+    const denom = f * (T2target - Tb) - (T2target - Tamb);
     const W1raw = denom !== 0
-      ? (Ctotal * T2target - W * Tamb - cg * (G1 * Tb + G2 * Tamb)) / denom
+      ? (cg * G1 * Tb + W * Tamb + cg * G2 * Tamb - Ctotal * T2target) / denom
       : NaN;
 
     // Alvo inalcançável: nem sem água na 1ª parcela (W1=0) nem com toda a
@@ -628,7 +660,7 @@ function buildPseudoDecoccao() {
     // conta nova, é a mesma rodada ao contrário (ver especificação §6/V2).
     function targetAtW1(W1v) {
       const W2v = W - W1v;
-      const Cp = W1v + cg * G1;
+      const Cp = W1v * f + cg * G1;
       return (Cp * Tb + W2v * Tamb + cg * G2 * Tamb) / (Cp + W2v + cg * G2);
     }
     const eps = 1e-6;
@@ -646,20 +678,37 @@ function buildPseudoDecoccao() {
     }
     const W1 = Math.max(0, Math.min(W, W1raw));
     const W2 = W - W1;
-    const Cparcela = W1 + cg * G1;
+    // CparcelaFull: massa térmica da parcela ANTES da fervura evaporar
+    // nada — é o que aquece nas duas etapas de "aquecimento" (líquido
+    // ainda intacto). Cparcela: DEPOIS da fervura, é o que de fato entra
+    // no balanço com a água/malte restantes (T1/T2) — a evaporação já
+    // aconteceu a essa altura.
+    const CparcelaFull = W1 + cg * G1;
+    const Cparcela = W1 * f + cg * G1;
 
     // Enquanto só a 1ª parcela está na panela (etapas 1 e 3), a massa
     // térmica é menor que a da mostura completa — a MESMA potência aquece
     // proporcionalmente mais rápido. Sem escalar, o cronograma superestima
-    // esse trecho em ~20min (ver especificação §5, "decisão a tomar").
-    const scaledRate = heatingRate * (Ctotal / Cparcela);
+    // esse trecho em ~20min (ver especificação §5, "decisão a tomar"). A
+    // razão Ctotal/CparcelaFull não tem teto físico — com pouca água na 1ª
+    // parcela (puxada pequena, alvo baixo) ela dispara (26°C/min num caso
+    // extremo, aquecer 35°C em 1,4min), o que nenhuma panela real faz.
+    // Teto em 3× a taxa configurada: folga sobre os 2,03-2,92× dos casos
+    // reais (padrão de fábrica e os dois diagramas publicados, todos
+    // usados como fixture em scripts/verify_pseudo_decoccao.js — um teto
+    // mais apertado quebraria essas contas), mas ainda corta o extremo.
+    const scaledRate = Math.min(heatingRate * (Ctotal / CparcelaFull), heatingRate * 3);
 
     const rows = [];
     let totalMin = 0;
     function push(label, duration, mash, extra) {
       duration = Math.max(0, num(duration));
       totalMin += duration;
-      const row = { label, duration, totalMin, totalHours: totalMin / 60, mash, boil: null };
+      // samePlateau: mesma identidade usada por annotateRealPlateauTimes
+      // no motor de decocção, mas aqui não há perda térmica nem drift —
+      // igualdade de valor já é um proxy correto de "continua o patamar".
+      const samePlateau = rows.length > 0 && rows[rows.length - 1].mash === mash;
+      const row = { label, duration, totalMin, totalHours: totalMin / 60, mash, boil: null, samePlateau };
       if (extra) Object.assign(row, extra);
       rows.push(row);
       return row;
@@ -750,4 +799,12 @@ function computeSchedule(method, params) {
   return annotateRealPlateauTimes(rows);
 }
 
-window.Decoccao = { METHODS, getMethod, defaultParams, computeSchedule, totalMashVolumeL, THERMAL_EQUIV_L_PER_KG };
+// Export duplo: `window.Decoccao` pro navegador, `module.exports` pro Node
+// (testes, scripts/) — cada um só existe no ambiente certo, daí a checagem
+// antes de cada um. Sem o de Node, cada script de teste precisava recarregar
+// o arquivo inteiro num sandbox de vm só pra ganhar acesso às funções (era
+// assim que scripts/verify_pseudo_decoccao.js fazia antes deste export
+// existir).
+const DecoccaoExports = { METHODS, getMethod, defaultParams, computeSchedule, totalMashVolumeL, THERMAL_EQUIV_L_PER_KG };
+if (typeof window !== "undefined") window.Decoccao = DecoccaoExports;
+if (typeof module !== "undefined" && module.exports) module.exports = DecoccaoExports;

@@ -1,0 +1,11 @@
+{
+  "name": "decoccao",
+  "private": true,
+  "description": "Calculadora de programas de mostura por decocção — PWA estática, zero dependências de runtime. Os testes usam só o runner nativo do Node (node:test), sem dependências de dev também.",
+  "scripts": {
+    "test": "node --test tests/"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -46,6 +46,7 @@
     importFile: document.getElementById("importFile"),
     autosaveNote: document.getElementById("autosaveNote"),
     chartTooltip: document.getElementById("chartTooltip"),
+    chartLegend: document.getElementById("chartLegend"),
     chartEnzymeLegend: document.getElementById("chartEnzymeLegend"),
     saveModal: document.getElementById("saveModal"),
     presetNameInput: document.getElementById("presetNameInput"),
@@ -374,11 +375,12 @@
     // é exclusivo deste método, então serve pra distinguir sem precisar
     // saber o id do método.
     { test: (p) => p.key === "ambientTemp", text: "Temperatura da água e do malte ANTES de entrarem na mistura — geralmente a temperatura ambiente ou da torneira. Entra direto na conta de balanço térmico: é ela que decide quanta água/malte a 2ª parcela consegue esfriar." },
-    { test: (p) => p.key === "grainSplitPct", text: "Fração do malte total que vai pra 1ª parcela (a que ferve). O resto (malte + água) entra depois, já frio. É o único controle que você tem sobre a espessura da 1ª parcela — quanto maior essa fração, mais água sobra pra ela, mais rala fica." },
+    { test: (p) => p.key === "grainSplitPct", text: "Fração do malte total que vai pra 1ª parcela (a que ferve). O resto (malte + água) entra depois, já frio. É o único controle que você tem sobre a espessura da 1ª parcela — quanto maior essa fração, menos água sobra pra ela, mais grossa fica (aproxima do piso de 2,5 L/kg)." },
     { test: (p) => p.group === "Parcela" && p.key === "liquefacaoTemp", text: "Temperatura do repouso de liquefação da 1ª parcela, antes da fervura — deixa o amido dela solto o bastante pra não empapelar/queimar na panela." },
     { test: (p) => p.key === "liquefacaoTime", text: "Duração do repouso de liquefação da 1ª parcela, antes dela ir à fervura." },
     { test: (p) => p.group === "Parcela" && p.key === "fervuraTemp", text: "Temperatura REAL da fervura da 1ª parcela — diferente da decocção clássica, aqui não é uma convenção de balanço térmico (lá o valor padrão de 90-100°C é só um número de fórmula): é a temperatura de verdade que a panela atinge, porque é a mesma panela que depois recebe a água e o malte restantes." },
-    { test: (p) => p.group === "Parcela" && p.key === "decoctionTime", text: "Duração da fervura da 1ª parcela — é o tempo que gera a reação de Maillard e rompe a parede celular do malte fervido, a base física do método." },
+    { test: (p) => p.group === "Parcela" && p.key === "decoctionTime", text: "Duração da fervura da 1ª parcela — é o tempo que gera a reação de Maillard e rompe a parede celular do malte fervido, a base física do método. Junto com a taxa de evaporação (campo ao lado), decide quanta água a fervura tira da parcela antes da mistura final." },
+    { test: (p) => p.key === "evapRatePctPerHour", text: "Quanto a fervura da 1ª parcela evapora por hora, em % do que tinha de água. Padrão 0: panela com tampa, ou perda desprezível na duração da sua fervura. A água que evapora entra na conta do alvo — sem isso, a mistura final saía meio a dois graus mais fria do que o alvo pedido, porque W1 era resolvido como se toda a água ainda estivesse lá." },
     { test: (p) => p.group === "Parcela" && p.key === "transferTime", text: "Tempo de cada adição (a da água restante e a do malte restante) — são duas adições na mesma panela, não uma transferência entre tinas." },
     { test: (p) => p.key === "proteaseTemp", text: "Temperatura da rampa de protease, logo depois da 2ª parcela entrar. Zerar o campo \"Rampa de protease\" (ao lado) pula essa etapa inteira — nesse caso o alvo da mistura vira a temperatura da rampa de β-amilase, não esta aqui." },
     { test: (p) => p.key === "betaTemp", text: "Temperatura da rampa de β-amilase (produz mais açúcar fermentável, corpo mais leve). Se a rampa de protease estiver zerada, é ESTE valor que a mistura da água+malte restantes precisa atingir — a conta resolve o quanto de água entra na 1ª parcela pra chegar exatamente aqui." },
@@ -550,7 +552,7 @@
       "acertar a temperatura exatamente quando o malte restante entrar. O resultado é a espessura desta parcela.";
     if (severity === "alarm") {
       text += ` Atenção: ${fmtNum(r.pseudoEspessura)} L/kg está abaixo do piso de 2,5 L/kg publicado pra qualquer mostura levada ` +
-        "à fervura — risco alto de queimar no fundo da panela. Baixe a fração de malte da 1ª parcela pra engrossar.";
+        "à fervura — risco alto de queimar no fundo da panela. Baixe a fração de malte da 1ª parcela pra ralear.";
     } else if (severity === "warn") {
       text += ` Atenção: ${fmtNum(r.pseudoEspessura)} L/kg está abaixo do confortável (3,0 L/kg) — mexa sem parar durante a fervura desta parcela.`;
     }
@@ -667,69 +669,77 @@
   function renderResults() {
     const method = getMethod(state.methodId);
     const rows = computeSchedule(method, state.params);
+    const unreachable = rows.pseudoUnreachable;
 
     // V2 da especificação da pseudo-decocção: nem W1=0 nem W1=W chegam no
     // alvo pedido — a fórmula devolveria água negativa ou maior que o
-    // total, um "plano" sem sentido físico. Não renderiza a escada nesse
-    // caso (nem o resto: cronômetro, gráfico), mostra o alvo mínimo e
-    // máximo alcançáveis, que a mesma fórmula dá de graça fixando W1 nos
-    // dois extremos (ver methods.js).
-    if (rows.pseudoUnreachable) {
-      const u = rows.pseudoUnreachable;
+    // total, um "plano" sem sentido físico. O resumo/gráfico/escada não
+    // fazem sentido nesse estado, mas o painel do cronômetro (fora do
+    // #resultsNormal, ver index.html) continua rodando por baixo do aviso
+    // — sem isso uma brassagem já em andamento perdia Pausar/Cheguei/
+    // Resetar por trás da tela vermelha, com o relógio correndo escondido
+    // (achado Q1, crítico).
+    el.pseudoUnreachable.hidden = !unreachable;
+    el.resultsNormal.hidden = !!unreachable;
+    if (unreachable) {
+      const u = unreachable;
+      const belowMin = u.target < u.minTarget;
+      const fieldLabel = u.usingProtease ? "da rampa de protease" : "da rampa de β-amilase";
+      const fieldId = u.usingProtease ? "p_proteaseTemp" : "p_betaTemp";
       el.pseudoUnreachableText.textContent =
         `Com os parâmetros atuais, a mistura da água e do malte restantes nunca chega a ${fmtNum(u.target)}°C — ` +
         `o alcançável vai de ${fmtNum(u.minTarget)}°C a ${fmtNum(u.maxTarget)}°C. ` +
-        (u.usingProtease
-          ? "Baixe a temperatura da rampa de protease, suba a temperatura ambiente considerada, ou mude a fração de malte na 1ª parcela."
-          : "Baixe a temperatura da rampa de β-amilase, suba a temperatura ambiente considerada, ou mude a fração de malte na 1ª parcela.");
-      el.pseudoUnreachable.hidden = false;
-      el.resultsNormal.hidden = true;
-      state.rows = rows;
-      state.displayRows = rows;
-      return;
-    }
-    el.pseudoUnreachable.hidden = true;
-    el.resultsNormal.hidden = false;
-
-    const total = rows.length ? rows[rows.length - 1].totalMin : 0;
-    state.rows = rows;
-    state.total = total;
-
-    el.stepCount.textContent = String(rows.length);
-
-    const mashVolumeL = totalMashVolumeL(state.params);
-    el.mashVolume.textContent = `${fmtNum(mashVolumeL)} L`;
-    ensureHint(el.mashVolumeWrap,
-      `Volume total estimado da mostura (água + malte molhado): ${fmtNum(state.params.waterVolume)}L de água ` +
-      `+ ${fmtNum(state.params.grainWeight)}kg de malte × 0,67L/kg = ${fmtNum(mashVolumeL)}L. ` +
-      "É o volume de referência usado pra calcular quanto puxar em cada decocção."
-    );
-
-    // Pseudo-decocção não puxa nada — "Maior puxada" perde o sentido.
-    // "1ª parcela" (a que ferve) é o número equivalente: dimensiona a
-    // mesma panela (especificação §7).
-    const pseudoParcelaRow = rows.find((r) => r.pseudoParcelaW1 !== undefined);
-    if (pseudoParcelaRow) {
-      el.maxPullLabel.textContent = "1ª parcela:";
-      const totalL = pseudoParcelaRow.pseudoParcelaG1 + pseudoParcelaRow.pseudoParcelaW1;
-      el.maxPull.textContent = `${fmtNum(pseudoParcelaRow.pseudoParcelaG1)} kg + ${fmtNum(pseudoParcelaRow.pseudoParcelaW1)} L`;
-      ensureHint(el.maxPullWrap,
-        `Volume da 1ª parcela (a que ferve sozinha) — é ela que dimensiona sua panela: ${fmtNum(totalL)}L no total, ` +
-        `${fmtNum(pseudoParcelaRow.pseudoEspessura)} L/kg de espessura.`
-      );
+        (belowMin
+          ? `Suba a temperatura ${fieldLabel} para pelo menos ${fmtNum(u.minTarget)}°C, ou considere água/malte mais frios.`
+          : `Baixe a temperatura ${fieldLabel} para no máximo ${fmtNum(u.maxTarget)}°C.`);
+      // Abre "Configurações avançadas" (o campo culpado quase sempre está
+      // lá dentro) e foca nele — sem isso o aviso aparece, mas o campo que
+      // resolve pode estar atrás de um <details> fechado (achado Q1).
+      const details = document.querySelector(".advanced-settings");
+      if (details) details.open = true;
+      const field = document.getElementById(fieldId);
+      if (field) field.focus({ preventScroll: false });
     } else {
-      el.maxPullLabel.textContent = "Maior puxada:";
-      const pulls = rows.filter((r) => r.decoctionVolumeL !== undefined);
-      const maxPullL = pulls.length ? Math.max(...pulls.map((r) => r.decoctionVolumeL)) : 0;
-      const minPanelaL = maxPullL * 1.25;
-      el.maxPull.textContent = pulls.length ? `${fmtNum(maxPullL)} L` : "–";
-      ensureHint(el.maxPullWrap,
-        pulls.length
-          ? `Volume da maior puxada deste programa — é ela que dimensiona sua panela de fervura da decocção. ` +
-            `Recomenda-se folga de pelo menos 25% sobre esse volume, então a panela precisa ter pelo menos ${fmtNum(minPanelaL)}L.`
-          : "Este método não puxa decocção."
+      const total = rows.length ? rows[rows.length - 1].totalMin : 0;
+      state.total = total;
+
+      el.stepCount.textContent = String(rows.length);
+
+      const mashVolumeL = totalMashVolumeL(state.params);
+      el.mashVolume.textContent = `${fmtNum(mashVolumeL)} L`;
+      ensureHint(el.mashVolumeWrap,
+        `Volume total estimado da mostura (água + malte molhado): ${fmtNum(state.params.waterVolume)}L de água ` +
+        `+ ${fmtNum(state.params.grainWeight)}kg de malte × 0,67L/kg = ${fmtNum(mashVolumeL)}L. ` +
+        "É o volume de referência usado pra calcular quanto puxar em cada decocção."
       );
+
+      // Pseudo-decocção não puxa nada — "Maior puxada" perde o sentido.
+      // "1ª parcela" (a que ferve) é o número equivalente: dimensiona a
+      // mesma panela (especificação §7).
+      const pseudoParcelaRow = rows.find((r) => r.pseudoParcelaW1 !== undefined);
+      if (pseudoParcelaRow) {
+        el.maxPullLabel.textContent = "1ª parcela:";
+        const totalL = pseudoParcelaRow.pseudoParcelaG1 + pseudoParcelaRow.pseudoParcelaW1;
+        el.maxPull.textContent = `${fmtNum(pseudoParcelaRow.pseudoParcelaG1)} kg + ${fmtNum(pseudoParcelaRow.pseudoParcelaW1)} L`;
+        ensureHint(el.maxPullWrap,
+          `Volume da 1ª parcela (a que ferve sozinha) — é ela que dimensiona sua panela: ${fmtNum(totalL)}L no total, ` +
+          `${fmtNum(pseudoParcelaRow.pseudoEspessura)} L/kg de espessura.`
+        );
+      } else {
+        el.maxPullLabel.textContent = "Maior puxada:";
+        const pulls = rows.filter((r) => r.decoctionVolumeL !== undefined);
+        const maxPullL = pulls.length ? Math.max(...pulls.map((r) => r.decoctionVolumeL)) : 0;
+        const minPanelaL = maxPullL * 1.25;
+        el.maxPull.textContent = pulls.length ? `${fmtNum(maxPullL)} L` : "–";
+        ensureHint(el.maxPullWrap,
+          pulls.length
+            ? `Volume da maior puxada deste programa — é ela que dimensiona sua panela de fervura da decocção. ` +
+              `Recomenda-se folga de pelo menos 25% sobre esse volume, então a panela precisa ter pelo menos ${fmtNum(minPanelaL)}L.`
+            : "Este método não puxa decocção."
+        );
+      }
     }
+    state.rows = rows;
 
     const activeIndex = activeStepIndex(rows.length);
     const finished = activeIndex >= rows.length && rows.length > 0;
@@ -737,21 +747,15 @@
     annotateDisplayBoil(displayRows, state.params.fervuraTemp);
     state.displayRows = displayRows;
 
-    // O total no cabeçalho é o número que o brassador olha pra saber a que
-    // horas termina — precisa refletir o atraso/adiantamento acumulado
-    // (displayRows), não o plano original (rows), senão discorda da
-    // própria escada logo abaixo (achado P1).
-    const displayTotal = displayRows.length ? displayRows[displayRows.length - 1].totalMin : 0;
-    el.totalTime.innerHTML = Math.abs(displayTotal - total) > 0.05
-      ? `${fmtHM(displayTotal)} <span>tempo total de processo (previsto ${fmtHM(total)})</span>`
-      : `${fmtHM(displayTotal)} <span>tempo total de processo</span>`;
-
     // O cap (fim do último passo) serve pro desenho — marcador e curva não
     // têm onde ficar depois do eixo. Mas se ele também limitar o `nowMin`
     // do alarme, o instante em que o alarme deveria começar a repetir é
     // exatamente o instante em que ele para de andar: `nowMin - lastAtMin`
     // vira `cap - cap`, zero pra sempre, e a última etapa toca uma única
     // vez e nunca mais (achado N1). O alarme usa o tempo real, sem teto.
+    // O painel do cronômetro (renderTimerUI/maybeAlarm) roda SEMPRE, ainda
+    // que o resto esteja escondido pelo aviso de alvo inalcançável — ver
+    // achado Q1.
     let alarmNowMin = null;
     let nowMin = null;
     if (activeIndex >= 0) {
@@ -760,8 +764,19 @@
       nowMin = Math.min(alarmNowMin, cap);
     }
 
-    renderLadder(displayRows, activeIndex);
-    renderChart(displayRows, state.params, nowMin);
+    if (!unreachable) {
+      // O total no cabeçalho é o número que o brassador olha pra saber a
+      // que horas termina — precisa refletir o atraso/adiantamento
+      // acumulado (displayRows), não o plano original (rows), senão
+      // discorda da própria escada logo abaixo (achado P1).
+      const displayTotal = displayRows.length ? displayRows[displayRows.length - 1].totalMin : 0;
+      el.totalTime.innerHTML = Math.abs(displayTotal - state.total) > 0.05
+        ? `${fmtHM(displayTotal)} <span>tempo total de processo (previsto ${fmtHM(state.total)})</span>`
+        : `${fmtHM(displayTotal)} <span>tempo total de processo</span>`;
+      renderLadder(displayRows, activeIndex);
+      renderChart(displayRows, state.params, nowMin);
+    }
+
     renderTimerUI(displayRows, activeIndex, finished);
     maybeAlarm(displayRows, activeIndex, alarmNowMin, finished);
   }
@@ -972,7 +987,11 @@
         hint.classList.add("hint--volume");
         if (isAlarm) hint.classList.add("hint--alarm");
         const small = document.createElement("small");
+        // A faixa "warn" (2,5-3,0 L/kg) só existia no texto do tooltip —
+        // e o padrão de fábrica (2,76 L/kg) já cai nela, então quem nunca
+        // abre o "?" não via nada diferente (achado Q12).
         if (isAlarm) small.classList.add("is-alarm");
+        else if (severity === "warn") small.classList.add("is-warn");
         small.textContent = `${fmtNum(r.pseudoEspessura)} L/kg`;
         volume.appendChild(pill);
         volume.appendChild(hint);
@@ -1120,6 +1139,19 @@
     }
     if (currentSegment && currentSegment.length > 1) boilSegments.push(currentSegment);
     const boilPts = boilSegments.flat();
+
+    // Legenda montada a partir do que de fato é desenhado, não fixa no
+    // HTML — a pseudo-decocção nunca tem linha de fervura (panela única),
+    // e o item "Tina de fervura" sobrava sem nenhuma bolinha correspondente
+    // no gráfico (achado Q6, mesma família do N8b da 3ª leitura).
+    const isCustomEngine = !!getMethod(state.methodId).computeRows;
+    const mashLabel = isCustomEngine ? "Panela (1ª parcela, depois mostura completa)" : "Tina de mostura";
+    let legendHtml = `<span><i class="chart-legend__dot" style="background:var(--steel)"></i>${mashLabel}</span>`;
+    if (boilSegments.length) {
+      legendHtml += `<span><i class="chart-legend__dot" style="background:var(--copper)"></i>Tina de fervura (decocção)</span>`;
+    }
+    legendHtml += `<span><i class="chart-legend__dot" style="background:var(--amber)"></i>Agora</span>`;
+    el.chartLegend.innerHTML = legendHtml;
 
     const allTemps = mashPts.concat(boilPts).map((p) => p.v);
     const tMin = Math.min(...allTemps) - 5;
@@ -1499,6 +1531,12 @@
   const ALARM_REPEAT_EVERY_MIN = 2;
   function maybeAlarm(rows, activeIndex, nowMin, finished) {
     if (!timer.running || finished || activeIndex < 0 || activeIndex >= rows.length || nowMin === null) return;
+    // A primeira etapa de todo programa (Mash In/Empastar) sempre tem
+    // duração zero — sem esta guarda, o alarme disparava no instante
+    // exato de apertar "Iniciar" (nowMin~0 >= totalMin 0), um susto que
+    // não avisa nada que o usuário não soubesse (ele acabou de clicar
+    // "Iniciar" com a própria mão — achado Q13).
+    if (rows[activeIndex].totalMin <= 0) return;
     if (nowMin < rows[activeIndex].totalMin - 1e-9) return;
     if (timer.alarm.index !== activeIndex) timer.alarm = { index: activeIndex, count: 0, lastAtMin: -Infinity };
     if (timer.alarm.count >= ALARM_MAX_REPEATS) return;
@@ -1628,6 +1666,18 @@
           existing[id] = { ...(existing[id] || {}), ...byName };
         }
         savePresets(existing);
+      }
+      // Exportar JSON leva o registro de horários (N7) — sem isto, quem
+      // trocasse de aparelho levava o arquivo e perdia o histórico de
+      // brassagem mesmo assim (achado Q11).
+      if (data.timerByMethod) {
+        for (const [id, t] of Object.entries(data.timerByMethod)) {
+          if (getMethod(id).id === id && Array.isArray(t.actualStepEndMin)) {
+            const stored = loadTimer(id);
+            stored.actualStepEndMin = t.actualStepEndMin;
+            localStorage.setItem(TIMER_KEY(id), JSON.stringify(stored));
+          }
+        }
       }
       state.params = loadCurrentParams(state.methodId);
       renderForm();

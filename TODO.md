@@ -1,5 +1,32 @@
 # Ajustes futuros
 
+## Convenção de 90°C no balanço de energia da decocção (C2)
+
+**Status:** resolvido — explicado pelo parâmetro de perda térmica em
+espera (T3, ver seção abaixo), não precisa de um campo próprio.
+
+O achado original (1ª leitura): a ferramenta calcula a fração de
+decocção com a fervura a 100°C, e sai 21-27% abaixo do que Narziß e
+Kunze publicam — porque as fontes alemãs convencionam 90°C no
+denominador do balanço, não os 100°C reais. Era uma discrepância sem
+explicação: uma constante (90°C) sem mecanismo físico por trás.
+
+A 5ª leitura (achado bônus, fora da lista numerada) mostrou que **a
+perda térmica em espera (T3), já implementada, reproduz essa
+convenção sozinha, como consequência física, sem precisar de um
+segundo campo dedicado**: com `mashCoolingRate` em ~0,1°C/min, o
+volume calculado pelo app já cai dentro de 20 mililitros do valor que
+a convenção de 90°C dá pro Simples (medido nas duas pontas — motor em
+Node e a tela, alternando o campo entre 0 e 0,1). A convenção de 90°C
+das fontes alemãs é, ela mesma, a perda térmica da tina em espera com
+outro nome — um número agregado de uma época em que ninguém ia
+parametrizar isso separadamente. Fica resolvido pedindo o pedido do
+segundo campo de temperatura (retirado nessa mesma leitura): a
+ferramenta agora tem a grandeza física separada, e ela generaliza
+melhor que uma constante fixa (varia por método, por puxada
+específica, por quanto tempo aquela puxada fica esperando — a
+convenção de 90°C aplica a mesma penalidade fixa a todas).
+
 ## Margem de perda térmica no cálculo de volume de decocção
 
 **Status:** implementado (branch `feature/t3-perda-termica-espera`) — ver
@@ -76,3 +103,43 @@ uma constante global fixa — a decidir.
 - [Top-Down Brew: Decoction Percent](https://topdownbrew.com/DecoctionPercent.html)
 - Wolfgang Kunze, *Technology Brewing and Malting*, 5ª ed., VLB Berlin — fórmula de decocção com denominador em 90°C
 - Ludwig Narziss, *Abriss der Bierbrauerei*, 7ª ed. — referência de técnicas de decocção (citada na literatura, não localizada em texto aberto durante essa pesquisa)
+
+## Evaporação na fervura da 1ª parcela (pseudo-decocção)
+
+**Status:** implementado — ver `evapRatePctPerHour` em `methods.js`
+(`buildPseudoDecoccao`/`computeRows`) e os testes em
+`tests/pseudo-decoccao.test.js`. Parâmetro opcional, **padrão 0%/h**
+(evaporação desprezada): mesma filosofia do `mashCoolingRate` (T3) —
+só quem liga o campo vê qualquer diferença.
+
+A 1ª parcela ferve por `decoctionTime` minutos antes de a água e o
+malte restantes entrarem, e perde água de verdade nesse tempo. A
+correção não é só descontar `W1` depois de calculado — como `W1` é
+**resolvido** pelo alvo da mistura (T2target), não digitado, o fator de
+evaporação (`f = 1 - evapRate·decoctionTime/60`) entra DENTRO da
+própria equação de balanço, que precisou ser re-derivada:
+
+```
+T2 = [(W1·f + cg·G1)·Tb + (W-W1)·Tamb + cg·G2·Tamb] / [(W1·f+cg·G1) + (W-W1) + cg·G2]
+```
+
+isolando W1 (com denom = f·(T2-Tb) - (T2-Tamb)):
+
+```
+W1 = [cg·G1·Tb + W·Tamb + cg·G2·Tamb - Ctotal·T2] / denom
+```
+
+Reduz exatamente à fórmula original quando `f = 1` (sem evaporação) —
+conferido algebricamente e pelos testes de regressão (evapRate=0
+continua batendo com as fixtures da especificação, byte a byte).
+
+`CparcelaFull` (massa térmica ANTES da fervura evaporar — usada na
+taxa de aquecimento escalada, T5) e `Cparcela` (DEPOIS — usada em
+T1/T2) viraram duas variáveis separadas: a evaporação só acontece
+durante a fervura em si, não durante o aquecimento até ela.
+
+Conferido: sem a correção, o cenário publicado da especificação
+(ambiente 27°C, alvo 52°C) com 10%/h de evaporação chegaria a
+51,28°C — 0,72°C abaixo do alvo, dentro da faixa de 0,5-2°C estimada
+aqui. Com a correção, sai exatamente 52,00°C em qualquer taxa de
+evaporação, porque `W1` cresce pra compensar a água que vai evaporar.

@@ -6,6 +6,106 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 versionamento segue [SemVer](https://semver.org/lang/pt-BR/) (`MAJOR.MINOR.PATCH`).
 A versão atual fica em `version.js` e aparece no rodapé do app.
 
+## [1.11.0] — 2026-09-02
+
+Quinta leitura, fechada por completo: os oito achados da quarta
+confirmados, dez achados novos na Pseudo-decocção (1 crítico, 1 grave,
+3 de modelo, 2 de interface, 2 de acessibilidade, 1 de acabamento) — os
+nove primeiros corrigidos de cara, o décimo (Q5, evaporação) implementado
+na sequência, junto com uma suíte de testes unitários pedida à parte que
+trava contra regressão em todo o motor de cálculo.
+
+### Corrigido
+- **[crítico] Q1**: uma brassagem em andamento na Pseudo-decocção ficava
+  presa atrás da tela de "alvo fora do alcance" — o painel do
+  cronômetro (Pausar/Cheguei/Resetar) estava dentro do mesmo wrapper
+  escondido pelo aviso, então o relógio continuava contando escondido,
+  sem nenhum controle acessível. Painel do cronômetro movido pra fora
+  do `#resultsNormal`; o aviso agora também abre "Configurações
+  avançadas" e foca no campo que resolve.
+- **[grave] Q2**: ligar a perda térmica em espera (T3) apagava o
+  tooltip de "tempo real do patamar" nos sete métodos de decocção — o
+  agrupamento comparava temperatura exata, e com a mostura esfriando
+  minuto a minuto dentro do patamar nenhum grupo se formava mais.
+  Agrupamento passa a usar uma marca própria (`samePlateau`), não mais
+  igualdade de valor.
+- **[modelo] Q3**: dois textos da Pseudo-decocção diziam o oposto do
+  que o motor calcula — o tooltip do campo "% do malte na 1ª parcela"
+  ("mais água sobra, mais rala fica") e o próprio alarme de espessura
+  baixa ("baixe a fração pra engrossar"), os dois com a direção
+  invertida. Corrigidos.
+- **[modelo] Q4**: as três sugestões do aviso "alvo fora do alcance"
+  assumiam sempre um alvo alto demais — mas na prática, dentro dos
+  limites dos campos, só o limite INFERIOR é violável. Mensagem agora
+  tem um texto por lado do limite, e a sugestão de mudar a fração de
+  malte (que move o limite ±1,7°C, quase nunca o bastante) saiu da
+  lista.
+- **Q6**: a legenda do gráfico anunciava uma "Tina de fervura" fixa no
+  HTML mesmo na Pseudo-decocção, que não tem essa panela — nenhuma
+  linha correspondente era desenhada. Legenda agora é montada a partir
+  das séries que o gráfico de fato desenha.
+- **[acessibilidade] Q7**: o aviso de "alvo fora do alcance" não era
+  anunciado por leitor de tela — `role="alert"` adicionado.
+- **[acessibilidade] Q8**: botão primário e aba selecionada reprovavam
+  contraste AA nos dois temas (4,29:1 claro, 2,94:1 escuro — mínimo é
+  4,5:1), pré-existente desde antes desta rodada. Tokens `--btn-bg`/
+  `--btn-fg` novos, com o par que passa nos dois temas (6,62:1 /
+  5,60:1).
+- **Q9**: rótulo do parâmetro de perda térmica ("...em espera") não
+  deixava claro que o efeito só vale entre a puxada e o retorno da
+  decocção, não a brassagem inteira. Renomeado pra "...enquanto a
+  decocção está fora".
+- **[modelo] Q10**: a taxa de aquecimento escalada da Pseudo-decocção
+  (massa térmica da 1ª parcela) não tinha teto — combinações extremas
+  chegavam a 26°C/min. Teto em 3× a taxa configurada, folgado o
+  bastante pra não afetar os casos reais (2,03-2,92×, os mesmos usados
+  como fixture nos testes).
+- **Q11**: o Importar JSON ignorava o registro de horários
+  (`timerByMethod`) que o Exportar já inclui desde a v1.9.0 (achado
+  N7) — quem trocasse de aparelho levava o arquivo, mas perdia o
+  histórico de brassagem mesmo assim.
+- **Q12**: a faixa "confortável, mas não ideal" de espessura da
+  Pseudo-decocção (2,5-3,0 L/kg) só existia no texto do tooltip — e o
+  padrão de fábrica (2,76 L/kg) cai exatamente nela. Tom âmbar
+  adicionado ao número na tela.
+- **Q13**: o alarme sonoro disparava no instante exato de apertar
+  "Iniciar" — a 1ª etapa de todo programa tem duração zero, então a
+  condição de disparo já batia na primeira checagem.
+- **[modelo] Q5**: a fervura da 1ª parcela da Pseudo-decocção não
+  descontava a água que evapora — a mistura final saía 0,5-2°C mais
+  fria do que o alvo pedido. Novo parâmetro `evapRatePctPerHour` (%/h,
+  padrão **0**, mesma filosofia do `mashCoolingRate`/T3). Como `W1` é
+  **resolvido** pelo alvo (não digitado), a correção não é descontar
+  `W1` depois de calculado — o fator de evaporação entra dentro da
+  própria equação de balanço, que precisou ser re-derivada (fórmula em
+  `TODO.md`; reduz exatamente à original quando a taxa é 0). Testado: T2
+  continua batendo exatamente no alvo em qualquer taxa de evaporação;
+  sem a correção, o cenário publicado da especificação erraria o alvo
+  em 0,72°C, dentro da faixa estimada no achado original.
+
+### Alterado
+- `TODO.md`: **C2** (convenção de 90°C no balanço de energia da
+  decocção clássica, aberto desde a 1ª leitura) marcado como
+  resolvido — a 5ª leitura mostrou que a perda térmica em espera (T3,
+  já implementada) reproduz essa convenção sozinha, como consequência
+  física, sem precisar de um campo dedicado.
+
+### Adicionado
+- **Suíte de testes unitários** (`tests/`, `node:test`, zero
+  dependências) — 65 testes em 4 arquivos: totais e puxadas golden dos
+  8 métodos com parâmetros de fábrica (regressão), o balanço de
+  energia da decocção reconstruído e conferido método a método
+  (física), o parâmetro de perda térmica (T3, incluindo o Q2 acima
+  como teste permanente) e os 11 casos de teste + duas fixtures
+  completas da especificação da Pseudo-decocção, mais a evaporação
+  (Q5) acima. `npm test` roda tudo; `.github/workflows/test.yml` roda
+  a mesma suíte em todo push. Ver "Testes" no `README.md`.
+- `methods.js` agora também exporta por `module.exports`, além de
+  `window.Decoccao` — o navegador nem percebe a diferença
+  (`typeof window` continua guardando o caminho antigo), mas testes e
+  scripts em Node deixam de precisar recarregar o arquivo num sandbox
+  de `vm` só pra ganhar acesso às funções.
+
 ## [1.10.0] — 2026-09-02
 
 ### Adicionado
@@ -409,7 +509,8 @@ de volume.
 - Autosave no `localStorage`, predefinições nomeadas (ocultas da UI por
   ora), exportar/importar configuração em JSON.
 
-[1.10.0]: https://github.com/henriqueboaventura/decoccao/compare/f95cf31...main
+[1.11.0]: https://github.com/henriqueboaventura/decoccao/compare/a364f74...main
+[1.10.0]: https://github.com/henriqueboaventura/decoccao/compare/f95cf31...a364f74
 [1.9.1]: https://github.com/henriqueboaventura/decoccao/compare/75dccf1...f95cf31
 [1.9.0]: https://github.com/henriqueboaventura/decoccao/compare/f7ffffd...75dccf1
 [1.8.0]: https://github.com/henriqueboaventura/decoccao/compare/c0ceb1a...f7ffffd

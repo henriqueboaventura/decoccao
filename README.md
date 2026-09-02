@@ -5,10 +5,12 @@ ferramenta usável no celular ou no computador, sem depender de Excel.
 
 ## O que faz
 
-- 7 métodos de mostura: **Simples**, **Dupla Tradicional**, **Dupla Moderna**,
-  **Hochkurz**, **Boaventura**, **Dupla Aprimorada** e **Tripla Tradicional**
-  — os três últimos cruzados com o [Braukaiser Wiki de decocção](https://www.hboaventura.com/braukaiser-wiki/pages/Decoction_Mashing.html)
-  para preencher métodos que faltavam.
+- 8 métodos de mostura: **Simples**, **Dupla Tradicional**, **Dupla Moderna**,
+  **Hochkurz**, **Boaventura**, **Dupla Aprimorada**, **Tripla Tradicional**
+  — os três do meio cruzados com o [Braukaiser Wiki de decocção](https://www.hboaventura.com/braukaiser-wiki/pages/Decoction_Mashing.html)
+  para preencher métodos que faltavam — e **Pseudo-decocção**, que não é
+  decocção: é o *cereal mash*/*double-mash system* (Briggs et al., Kunze,
+  Narziß, Brücklmeier), uma panela só sem puxada nem retorno.
 - Todos os parâmetros da planilha (temperaturas, tempos de rampa, taxa de
   aquecimento, tempos de transferência etc.) ficam editáveis em formulário.
 - A tabela de passo a passo, o tempo total e o gráfico de temperatura x tempo
@@ -37,11 +39,65 @@ python3 -m http.server 8080
 # abrir http://localhost:8080
 ```
 
+## Testes
+
+`methods.js` (o motor de cálculo) tem uma suíte de testes unitários em
+`tests/`, usando só o test runner nativo do Node (`node:test` — nenhuma
+dependência de dev):
+
+```bash
+npm test
+# ou, sem npm:
+node --test tests/
+```
+
+O que a suíte cobre:
+
+- **`regression.test.js`** — os números golden dos 8 métodos com
+  parâmetros de fábrica (tempo total, nº de etapas, volume e fração de
+  cada puxada), validados rodada após rodada de auditoria externa (ver
+  `CHANGELOG.md`). É a rede de segurança contra regressão silenciosa:
+  se um valor aqui mudar sem uma linha no changelog explicando por quê,
+  é bug.
+- **`physics.test.js`** — o balanço de energia da decocção
+  (`d = (T2-T1)/(Tb-T1)`) reconstruído e conferido contra o que o motor
+  calcula, pra qualquer método e não só os defaults; a conservação de
+  energia em puxadas devolvidas em mais de uma parte (T1 sempre fixo na
+  puxada original); o Hochkurz com fervura curta nas duas decocções
+  (Narziß); invariantes estruturais nos 8 métodos (schema
+  autoconsistente, cronograma monotônico, sem NaN).
+- **`mash-cooling.test.js`** — o parâmetro de perda térmica em espera
+  (T3): padrão 0 é sempre um no-op; ligado, o volume de puxada cresce
+  monotonicamente; o tooltip de "patamar real" sobrevive (achado Q2).
+- **`pseudo-decoccao.test.js`** — os 11 casos de teste e as duas
+  tabelas de passo a passo completas da especificação da
+  Pseudo-decocção, os dois diagramas publicados reproduzidos pela
+  fórmula direta, a constante térmica travada contra regressão, o teto
+  da taxa escalada (achado Q10) e o guarda de alvo inalcançável (V2).
+
+**Antes de publicar uma nova versão** (bump em `version.js` +
+`CHANGELOG.md`), rode `npm test` — o CI (`.github/workflows/test.yml`)
+já roda em todo push, mas não trava o deploy do GitHub Pages sozinho
+(ver "Deploy" abaixo), então a checagem manual antes do bump continua
+sendo o que garante isso.
+
+Escrevendo um teste novo: prefira valores conferidos à mão ou contra
+uma fonte externa (a própria especificação em PDF, um livro-texto, uma
+planilha) a copiar o que o motor já devolve — testar "o código bate com
+o código" não pega regressão nenhuma.
+
 ## Estrutura
 
 - `index.html`, `styles.css`, `app.js` — interface.
 - `methods.js` — motor de cálculo: schema de parâmetros + fórmulas de cada
-  método, extraídos célula a célula da planilha original.
+  método, extraídos célula a célula da planilha original. Exporta tanto
+  pra `window.Decoccao` (navegador) quanto por `module.exports` (Node —
+  testes e scripts).
+- `tests/` — suíte de testes unitários (`node:test`, zero dependências).
+  Ver "Testes" acima.
+- `scripts/verify_pseudo_decoccao.js` — script de conferência da
+  Pseudo-decocção com saída legível, referenciado pela própria
+  especificação em PDF do método.
 - `manifest.webmanifest`, `service-worker.js`, `icons/` — PWA.
 - `version.js` — versão atual do app (única fonte, lida pelo rodapé e pelo
   service worker). Ver `CHANGELOG.md`.
@@ -83,5 +139,12 @@ a 62/72°C).
 ## Deploy (GitHub Pages)
 
 Publicado via GitHub Pages a partir da branch `main`, pasta raiz — sem
-Actions, sem build. Qualquer alteração enviada para `main` já reflete no
-site em https://henriqueboaventura.github.io/decoccao/ em alguns minutos.
+Actions, sem build; o deploy em si não depende dos testes passando.
+Qualquer alteração enviada para `main` já reflete no site em
+https://henriqueboaventura.github.io/decoccao/ em alguns minutos.
+
+Há uma Action (`.github/workflows/test.yml`) que roda a suíte de testes
+em todo push — ela sinaliza regressão (✕ vermelho no commit/PR), mas não
+bloqueia o Pages, que publica de qualquer jeito. Rodar `npm test`
+localmente antes de enviar pra `main`, especialmente antes de um bump de
+versão, continua sendo o que evita publicar uma regressão.

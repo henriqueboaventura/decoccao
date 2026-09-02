@@ -7,6 +7,16 @@
   --text-dim: #6b6152;
   --copper: #b5602c;
   --copper-strong: #8f4a22;
+  /* Botão primário e aba selecionada usam texto branco sobre --copper puro
+     — 4,29:1 no claro, 2,94:1 no escuro, os dois abaixo do mínimo AA de
+     4,5:1 pro texto em negrito pequeno que "Iniciar"/"Salvar como…" usa
+     (achado Q8, pré-existente, achado ao medir com a mesma régua da N5).
+     --btn-bg/--btn-fg é o par que passa nos dois temas — claro usa
+     --copper-strong com texto branco; escuro inverte (fundo mais claro,
+     texto escuro), porque --copper-strong no escuro é claro demais pro
+     branco continuar funcionando. */
+  --btn-bg: #8f4a22;
+  --btn-fg: #ffffff;
   --amber: #c98a1f;
   --amber-strong: #8a5d00;
   --steel: #386079;
@@ -43,6 +53,11 @@
     --text-dim: #a8977c;
     --copper: #d17f3f;
     --copper-strong: #e69657;
+    /* --copper-strong no escuro é claro demais pro texto branco continuar
+       passando — inverte: fundo em --copper (mais escuro que -strong
+       aqui), texto escuro por cima. Medido 5,60:1 (achado Q8). */
+    --btn-bg: #d17f3f;
+    --btn-fg: #201a12;
     --amber: #e0a83f;
     --amber-strong: #e0a83f;
     --steel: #6fa0bd;
@@ -68,6 +83,8 @@
   --text-dim: #a8977c;
   --copper: #d17f3f;
   --copper-strong: #e69657;
+  --btn-bg: #d17f3f;
+  --btn-fg: #201a12;
   --amber: #e0a83f;
   --amber-strong: #e0a83f;
   --steel: #6fa0bd;
@@ -203,9 +220,9 @@ button, select, input {
 }
 .method-tab:hover { border-color: var(--copper); color: var(--text); }
 .method-tab[aria-selected="true"] {
-  background: var(--copper);
-  border-color: var(--copper);
-  color: #fff9ef;
+  background: var(--btn-bg);
+  border-color: var(--btn-bg);
+  color: var(--btn-fg);
 }
 
 .method-select {
@@ -464,8 +481,8 @@ button, select, input {
   transition: border-color 0.15s, background 0.15s;
 }
 .btn:hover { border-color: var(--copper); }
-.btn--primary { background: var(--copper); border-color: var(--copper); color: #fff9ef; }
-.btn--primary:hover { background: var(--copper-strong); border-color: var(--copper-strong); }
+.btn--primary { background: var(--btn-bg); border-color: var(--btn-bg); color: var(--btn-fg); }
+.btn--primary:hover { background: var(--copper-strong); border-color: var(--copper-strong); color: #fff9ef; }
 .btn--ghost { background: transparent; }
 .btn--danger:hover { border-color: var(--danger); color: var(--danger); }
 .btn--danger-fill { background: var(--danger); border-color: var(--danger); color: #fff9ef; }
@@ -770,6 +787,7 @@ button, select, input {
 .temp-pill--empty { color: var(--text-dim); background: transparent; }
 .temp-pill--alarm { background: color-mix(in srgb, var(--danger) 22%, transparent); color: var(--danger-strong); }
 .ladder-volume small.is-alarm { color: var(--danger); font-weight: 600; }
+.ladder-volume small.is-warn { color: var(--amber-strong); font-weight: 600; }
 
 @media (max-width: 620px) {
   .ladder-row {
