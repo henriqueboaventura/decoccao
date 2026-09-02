@@ -53,12 +53,17 @@
   </section>
 
   <section class="results-panel" aria-label="Programa calculado">
+    <div class="panel pseudo-unreachable" id="pseudoUnreachable" hidden>
+      <p class="pseudo-unreachable__title">Alvo da mistura fora do alcance</p>
+      <p id="pseudoUnreachableText"></p>
+    </div>
+    <div id="resultsNormal">
     <div class="panel summary-bar">
       <div class="summary-bar__total" id="totalTime">0<span>min</span></div>
       <div class="summary-bar__meta">
         <span>Etapas: <strong id="stepCount">0</strong></span>
         <span id="mashVolumeWrap">Volume da mostura: <strong id="mashVolume">–</strong></span>
-        <span id="maxPullWrap">Maior puxada: <strong id="maxPull">–</strong></span>
+        <span id="maxPullWrap"><span id="maxPullLabel">Maior puxada:</span> <strong id="maxPull">–</strong></span>
       </div>
     </div>
 
@@ -89,6 +94,7 @@
     <div class="panel schedule-panel">
       <div class="schedule-title" id="scheduleTitle">Passo a passo do programa</div>
       <div class="ladder" id="ladder" role="table" aria-labelledby="scheduleTitle"></div>
+    </div>
     </div>
   </section>
 </main>

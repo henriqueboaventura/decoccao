@@ -6,6 +6,39 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 versionamento segue [SemVer](https://semver.org/lang/pt-BR/) (`MAJOR.MINOR.PATCH`).
 A versão atual fica em `version.js` e aparece no rodapé do app.
 
+## [1.10.0] — 2026-09-02
+
+### Adicionado
+- **Pseudo-decocção**, 8º método. Não é decocção — é o *cereal mash*/
+  *double-mash system* documentado desde 1950 (Briggs et al. §4, Kunze
+  p. 250, Narziß Band 2 §3.2.5.2, Brücklmeier p. 145-147; popularizado
+  em homebrew por Kai Troester). Uma panela só: a 1ª parcela (fração do
+  malte + fração da água) liquefaz e ferve sozinha; o calor dela leva a
+  2ª parcela — água fria primeiro, malte seco depois — direto à 1ª
+  rampa do step mash. Sem puxada, sem retorno, sem fração de decocção.
+  - Motor de cálculo próprio (`computeRows`, não reaproveita `runSteps`
+    — a física é balanço de mistura direta, não puxada/retorno). Usa
+    uma constante térmica nova (0,4173 L-equivalentes de água por kg de
+    malte, derivada da equação de infusão do Palmer/Braukaiser) que a
+    decocção clássica não precisa, porque lá o calor específico do
+    malte cancela na conta e aqui não cancela mais.
+    Validado contra os 11 casos de teste e as duas tabelas completas de
+    passo a passo da especificação (`scripts/verify_pseudo_decoccao.js`
+    — todos os números batem, incluindo os dois diagramas publicados
+    reproduzidos exatamente: 52,5°C e 62,0°C).
+  - Taxa de aquecimento escalada enquanto só a 1ª parcela está na
+    panela (massa térmica menor, mesma potência aquece proporcionalmente
+    mais rápido) — sem isso o cronograma superestimava esse trecho em
+    ~20min.
+  - 4 validações: espessura da 1ª parcela abaixo do piso publicado
+    (2,5 L/kg) alarma; alvo da mistura inalcançável mostra a faixa
+    alcançável em vez de uma escada sem sentido físico; fração de malte
+    acima de 80%/abaixo de 30% avisa sobre pouca enzima/pouco efeito de
+    sabor; a temperatura logo após a água (antes do malte) ganha linha
+    própria na escada, com aviso se passar de 78°C.
+  - Zero regressão: os 7 métodos existentes, testados com os parâmetros
+    padrão, produzem saída idêntica à v1.9.1.
+
 ## [1.9.1] — 2026-09-02
 
 ### Corrigido
@@ -376,7 +409,8 @@ de volume.
 - Autosave no `localStorage`, predefinições nomeadas (ocultas da UI por
   ora), exportar/importar configuração em JSON.
 
-[1.9.1]: https://github.com/henriqueboaventura/decoccao/compare/75dccf1...main
+[1.10.0]: https://github.com/henriqueboaventura/decoccao/compare/f95cf31...main
+[1.9.1]: https://github.com/henriqueboaventura/decoccao/compare/75dccf1...f95cf31
 [1.9.0]: https://github.com/henriqueboaventura/decoccao/compare/f7ffffd...75dccf1
 [1.8.0]: https://github.com/henriqueboaventura/decoccao/compare/c0ceb1a...f7ffffd
 [1.7.0]: https://github.com/henriqueboaventura/decoccao/compare/d32d43a...c0ceb1a

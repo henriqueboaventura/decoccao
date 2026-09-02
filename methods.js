@@ -552,6 +552,166 @@ const hochkurz = buildDupla({
 const duplaAprimorada = buildDuplaAprimorada();
 const tripla = buildTripla();
 
+// Equivalente térmico do malte em L-equivalentes de água por kg — NÃO é o
+// 0,67 L/kg (equivalente volumétrico, usado pro volume da mostura). Vem de
+// 0,2 qt/lb (equação de infusão do Palmer/Braukaiser) convertido pro
+// métrico: 0,2 × 0,9464 L/qt ÷ 0,4536 kg/lb = 0,4173. Só é usado aqui —
+// na decocção normal o calor específico do grão CANCELA na conta (mesma
+// razão água:grão em toda fração puxada), o motor de runSteps() nem
+// precisa saber que ele existe. Na pseudo-decocção a água entra sem grão e
+// o grão entra sem água, então o calor específico do malte deixa de
+// cancelar e a conta precisa dessa constante pra valer.
+const THERMAL_EQUIV_L_PER_KG = 0.4173;
+
+// Pseudo-decocção ("cereal mash"/double-mash system, Briggs et al. §4,
+// Kunze p. 250, Narziß Band 2 §3.2.5.2, Brücklmeier p. 145-147): uma
+// panela só, sem puxada e sem retorno. Ferve a 1ª parcela (parte do malte
+// + parte da água), depois entra o RESTO da água (fria) e só então o
+// RESTO do malte seco — o calor da parcela fervida leva tudo direto à 1ª
+// rampa do step mash. A ordem água-antes-do-malte não é estética: entrar
+// com o malte seco seguindo direto na mostura fervente (93,5°C na
+// configuração padrão) destruiria as enzimas dele antes de qualquer
+// conversão.
+function buildPseudoDecoccao() {
+  const paramSchema = [
+    { ...G.WATER_VOLUME, default: 20 },
+    { ...G.GRAIN_WEIGHT, default: 5 },
+    { key: "ambientTemp", label: "Temp. da água e do malte (ambiente)", unit: "°C", group: "Geral", default: 25, min: 5, max: 40, step: 1 },
+    { ...G.MASHOUT_TEMP, default: 76 },
+    { ...G.MASHOUT_TIME, default: 10 },
+    { ...G.HEATING_RATE, default: 2 },
+    { key: "grainSplitPct", label: "% do malte na 1ª parcela", unit: "%", group: "Parcela", default: 50, min: 20, max: 80, step: 5 },
+    { key: "liquefacaoTemp", label: "Temp. do repouso de liquefação", unit: "°C", group: "Parcela", default: 70, min: 60, max: 80, step: 1 },
+    { key: "fervuraTemp", label: "Temp. de fervura da 1ª parcela", unit: "°C", group: "Parcela", default: 100, min: 90, max: 105, step: 1 },
+    { key: "decoctionTime", label: "Tempo de fervura da 1ª parcela", unit: "min", group: "Parcela", default: 30, min: 0, max: 90, step: 1 },
+    { key: "transferTime", label: "Tempo de cada adição", unit: "min", group: "Parcela", default: 2, min: 0, max: 30, step: 1 },
+    { key: "proteaseTemp", label: "Temp. da rampa de protease", unit: "°C", group: "Parcela", default: 52, min: 40, max: 60, step: 1 },
+    { key: "betaTemp", label: "Temp. da rampa de β-amilase", unit: "°C", group: "Parcela", default: 62, min: 55, max: 68, step: 1 },
+    { key: "alfaTemp", label: "Temp. da rampa de α-amilase", unit: "°C", group: "Parcela", default: 70, min: 65, max: 78, step: 1 },
+    { key: "liquefacaoTime", label: "Repouso de liquefação", unit: "min", group: "Rampas", default: 15, min: 0, max: 60, step: 1 },
+    // 0min pula a rampa de protease inteira — é o mesmo padrão que a Dupla
+    // Tradicional já usa pra "rampa de 0 min", não um campo booleano novo.
+    // Com 0, o alvo da mistura (T2, abaixo) vira a rampa de β-amilase.
+    { key: "proteaseTime", label: "Rampa de protease", unit: "min", group: "Rampas", default: 20, min: 0, max: 60, step: 1 },
+    { key: "betaTime", label: "Rampa de β-amilase", unit: "min", group: "Rampas", default: 40, min: 0, max: 90, step: 1 },
+    { key: "alfaTime", label: "Rampa de α-amilase", unit: "min", group: "Rampas", default: 20, min: 0, max: 90, step: 1 },
+  ];
+
+  function computeRows(params) {
+    const W = num(params.waterVolume);
+    const G = num(params.grainWeight);
+    const Tamb = num(params.ambientTemp);
+    const splitFrac = num(params.grainSplitPct) / 100;
+    const G1 = G * splitFrac;
+    const G2 = G - G1;
+    const Tb = num(params.fervuraTemp); // temperatura REAL da fervura, não convenção de balanço
+    const cg = THERMAL_EQUIV_L_PER_KG;
+    const heatingRate = num(params.heatingRate, 2) || 2;
+
+    // O alvo da mistura não é um campo — é derivado de proteaseTime, igual
+    // ao "campo que decide o desenho" já documentado no comentário do
+    // Hochkurz. proteaseTime=0 pula a rampa e o alvo vira betaTemp: os
+    // dois diagramas da fonte viram o mesmo programa com um campo diferente.
+    const proteaseOn = num(params.proteaseTime) > 0;
+    const T2target = proteaseOn ? num(params.proteaseTemp) : num(params.betaTemp);
+
+    const Ctotal = W + cg * G;
+    const denom = Tb - Tamb;
+    const W1raw = denom !== 0
+      ? (Ctotal * T2target - W * Tamb - cg * (G1 * Tb + G2 * Tamb)) / denom
+      : NaN;
+
+    // Alvo inalcançável: nem sem água na 1ª parcela (W1=0) nem com toda a
+    // água nela (W1=W) chega lá — a fórmula devolveria um W1 sem sentido
+    // físico (negativo ou maior que o total). Os dois limites saem da
+    // MESMA fórmula do T2 final, só fixando W1 nos extremos — não é uma
+    // conta nova, é a mesma rodada ao contrário (ver especificação §6/V2).
+    function targetAtW1(W1v) {
+      const W2v = W - W1v;
+      const Cp = W1v + cg * G1;
+      return (Cp * Tb + W2v * Tamb + cg * G2 * Tamb) / (Cp + W2v + cg * G2);
+    }
+    const eps = 1e-6;
+    if (!Number.isFinite(W1raw) || W1raw < -eps || W1raw > W + eps) {
+      const boundA = targetAtW1(0);
+      const boundB = targetAtW1(W);
+      const rows = [{ label: "Empastar a 1ª parcela", duration: 0, totalMin: 0, totalHours: 0, mash: Tamb, boil: null }];
+      rows.pseudoUnreachable = {
+        target: T2target,
+        minTarget: Math.min(boundA, boundB),
+        maxTarget: Math.max(boundA, boundB),
+        usingProtease: proteaseOn,
+      };
+      return rows;
+    }
+    const W1 = Math.max(0, Math.min(W, W1raw));
+    const W2 = W - W1;
+    const Cparcela = W1 + cg * G1;
+
+    // Enquanto só a 1ª parcela está na panela (etapas 1 e 3), a massa
+    // térmica é menor que a da mostura completa — a MESMA potência aquece
+    // proporcionalmente mais rápido. Sem escalar, o cronograma superestima
+    // esse trecho em ~20min (ver especificação §5, "decisão a tomar").
+    const scaledRate = heatingRate * (Ctotal / Cparcela);
+
+    const rows = [];
+    let totalMin = 0;
+    function push(label, duration, mash, extra) {
+      duration = Math.max(0, num(duration));
+      totalMin += duration;
+      const row = { label, duration, totalMin, totalHours: totalMin / 60, mash, boil: null };
+      if (extra) Object.assign(row, extra);
+      rows.push(row);
+      return row;
+    }
+
+    const esp = W1 / G1;
+    push("Empastar a 1ª parcela", 0, Tamb, {
+      pseudoParcelaW1: W1,
+      pseudoParcelaG1: G1,
+      pseudoEspessura: esp,
+      pseudoSplitPct: num(params.grainSplitPct),
+    });
+    // pseudoScaledHeat: essas duas etapas usam scaledRate (só a 1ª parcela
+    // na panela), não heatingRate puro — o resumo de aquecimento real ao
+    // concluir (N7, app.js) compara duração×heatingRate contra o tempo
+    // real assumindo UMA taxa só; incluir essas duas aqui compararia
+    // contra a taxa errada e sempre pareceria "mais lento" mesmo batendo
+    // certinho com a taxa escalada. Marcadas pra esse resumo pular.
+    push("Aquecimento até a liquefação", (num(params.liquefacaoTemp) - Tamb) / scaledRate, params.liquefacaoTemp, { pseudoScaledHeat: true });
+    push("Repouso de liquefação", params.liquefacaoTime, params.liquefacaoTemp);
+    push("Aquecimento até a fervura", (Tb - num(params.liquefacaoTemp)) / scaledRate, Tb, { pseudoScaledHeat: true });
+    push("Fervura da 1ª parcela", params.decoctionTime, Tb);
+
+    // T1: temperatura logo depois da água (ainda sem o malte) — é o número
+    // que separa a execução certa (água antes) da errada (malte
+    // direto na fervura): entra na conta porque decide se as enzimas do
+    // 2º malte sobrevivem (ver especificação §4/§6 V4).
+    const T1 = (Cparcela * Tb + W2 * Tamb) / (Cparcela + W2);
+    push("Adição da água restante", params.transferTime, T1, {
+      pseudoWaterAddL: W2,
+      pseudoWaterAddTemp: Tamb,
+    });
+    const T2 = (Cparcela * Tb + W2 * Tamb + cg * G2 * Tamb) / (Cparcela + W2 + cg * G2);
+    push("Adição do malte restante", params.transferTime, T2, { pseudoMaltAddKg: G2 });
+
+    if (proteaseOn) {
+      push("Rampa de protease", params.proteaseTime, params.proteaseTemp);
+      push("Aquecimento até a rampa de β-amilase", (num(params.betaTemp) - num(params.proteaseTemp)) / heatingRate, params.betaTemp);
+    }
+    push("Rampa de β-amilase", params.betaTime, params.betaTemp);
+    push("Aquecimento até a rampa de α-amilase", (num(params.alfaTemp) - num(params.betaTemp)) / heatingRate, params.alfaTemp);
+    push("Rampa de α-amilase", params.alfaTime, params.alfaTemp);
+    push("Aquecimento Mash Out", (num(params.mashOutTemp) - num(params.alfaTemp)) / heatingRate, params.mashOutTemp);
+    push("Mash Out", params.mashOutTime, params.mashOutTemp);
+
+    return rows;
+  }
+
+  return { paramSchema, computeRows };
+}
+const pseudoDecoccao = buildPseudoDecoccao();
+
 const METHODS = [
   { id: "simples", name: "Simples", description: "Uma decocção só: puxa uma fração da mostura, ferve e devolve pra elevar da sacarificação ao mash-out. O método mais rápido e mais fácil de calibrar.", source: "Braukaiser Wiki — Single Decoction; Kunze, Technology Brewing and Malting, 3ª ed.", ...simples },
   { id: "dupla-tradicional", name: "Dupla Tradicional", description: "Duas decocções: rampa de protease no início, depois duas puxadas que levam a mostura até a sacarificação e até o mash-out.", source: "Kunze, Technology Brewing and Malting, 3ª ed.; Narziß, Abriss der Bierbrauerei, 7ª ed.", ...duplaTradicional },
@@ -560,6 +720,13 @@ const METHODS = [
   { id: "boaventura", name: "Boaventura", description: "Rampas de maltose e dextrinização por aquecimento direto na tina; só ao final é puxada uma decocção única, já sacarificada, direto pra fervura.", source: "Autoral (Henrique Boaventura) — variante do Hochkurz, Braukaiser Wiki", ...boaventura },
   { id: "dupla-aprimorada", name: "Dupla Aprimorada", description: "Uma decocção grande devolvida em duas adições parciais, mais uma decocção menor no fim — o \"Enhanced Double Decoction\" do Braukaiser Wiki.", source: "Braukaiser Wiki — Enhanced Double Decoction", ...duplaAprimorada },
   { id: "tripla-tradicional", name: "Tripla Tradicional", description: "Três decocções — o método clássico completo, mais longo e com perfil de melanoidinas mais pronunciado.", source: "Narziß, Die Bierbrauerei Band 2, §3.2.4.10 — Dreimaischverfahren", ...tripla },
+  {
+    id: "pseudo-decoccao",
+    name: "Pseudo-decocção",
+    description: "Divide malte e água em duas parcelas: a 1ª liquefaz e ferve sozinha, e o calor dela leva a 2ª (água fria, depois malte seco) direto à 1ª rampa do step mash. Uma panela só — sem puxada, sem retorno, sem fração de decocção. Método de sabor com base física sólida (ruptura de parede celular e Maillard na fervura) e base sensorial ainda não testada.",
+    source: "Craft Beer & Brewing (2016) e BYO, atribuído a Kai Troester; o procedimento equivale ao Earl'sches Kochmaischverfahren (Brücklmeier, 2022, p. 145-147) e ao cereal mash de Briggs et al., Brewing: Science and Practice (2004), §4, p. 93",
+    ...pseudoDecoccao,
+  },
 ];
 
 function getMethod(id) {
@@ -573,7 +740,14 @@ function defaultParams(method) {
 }
 
 function computeSchedule(method, params) {
-  return annotateRealPlateauTimes(runSteps(method.steps, params));
+  // Pseudo-decocção não puxa nem devolve nada — é uma panela só, física de
+  // mistura direta, não balanço de energia entre duas tinas — então não
+  // reaproveita runSteps (a máquina de puxada/retorno não seria tocada,
+  // fica só ali sem fazer nada). computeRows, quando existe, substitui
+  // runSteps inteiro; annotateRealPlateauTimes continua valendo pros dois,
+  // porque só olha label/duration/mash, não pullsDecoction/boil.
+  const rows = method.computeRows ? method.computeRows(params) : runSteps(method.steps, params);
+  return annotateRealPlateauTimes(rows);
 }
 
-window.Decoccao = { METHODS, getMethod, defaultParams, computeSchedule, totalMashVolumeL };
+window.Decoccao = { METHODS, getMethod, defaultParams, computeSchedule, totalMashVolumeL, THERMAL_EQUIV_L_PER_KG };
