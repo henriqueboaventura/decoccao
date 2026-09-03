@@ -2,6 +2,13 @@
   "use strict";
 
   const { METHODS, getMethod, defaultParams, sanitizeParams, computeSchedule, totalMashVolumeL } = window.Decoccao;
+  const {
+    fmtNum, splitHM, fmtHM, fmtClock, defaultAlarmState,
+    volumeSeverity, pseudoEspessuraSeverity, annotateDisplayBoil,
+    isTimerStarted, computeActiveStepIndex, computeIsTimerFinished,
+    computeEffectiveRows, nextAlarmState,
+    ALARM_MAX_REPEATS, ALARM_REPEAT_EVERY_MIN,
+  } = window.DecoccaoCore;
   const STORAGE_PREFIX = "decoccao:v1";
   const CURRENT_KEY = (id) => `${STORAGE_PREFIX}:current:${id}`;
   const PRESETS_KEY = `${STORAGE_PREFIX}:presets`;
@@ -147,35 +154,9 @@
   }
   el.toastAction.addEventListener("click", () => location.reload());
 
-  function fmtNum(n, digits = 1) {
-    return n.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: digits });
-  }
-
-  function splitHM(totalMin) {
-    let h = Math.floor(totalMin / 60);
-    let m = Math.round(totalMin - h * 60);
-    if (m === 60) { m = 0; h += 1; }
-    return { h, m };
-  }
-
-  function fmtHM(totalMin) {
-    const { h, m } = splitHM(totalMin);
-    if (h <= 0) return `${m}min`;
-    return `${h}h${String(m).padStart(2, "0")}min`;
-  }
-
-  function fmtClock(totalSeconds) {
-    const s = Math.max(0, Math.round(totalSeconds));
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    const sec = s % 60;
-    if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
-    return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
-  }
-
-  function defaultAlarmState() {
-    return { index: -1, count: 0, lastAtMin: -Infinity };
-  }
+  // fmtNum/splitHM/fmtHM/fmtClock/defaultAlarmState vêm de DecoccaoCore
+  // (app-core.js) — desestruturadas no topo do arquivo. Puras, sem DOM,
+  // testadas em tests/app-core.test.js.
 
   function loadTimer(methodId) {
     const stored = safeParse(localStorage.getItem(TIMER_KEY(methodId)), null);
@@ -204,40 +185,23 @@
 
   // undefined = ainda não começou (nenhum "Iniciar" apertado nesta sessão
   // de brassagem); um número = índice da etapa ativa agora. Nunca aponta
-  // pra além de rows.length (aí o programa está concluído).
+  // pra além de rows.length (aí o programa está concluído). Lógica pura em
+  // DecoccaoCore (app-core.js) — aqui só repassa timer/state, que só
+  // existem neste módulo.
   function timerStarted() {
-    return timer.running || timer.accumulatedMs > 0 || timer.actualStepEndMin.length > 0;
+    return isTimerStarted(timer);
   }
   function activeStepIndex(rowsLength) {
-    if (!timerStarted()) return -1;
-    return Math.min(timer.actualStepEndMin.length, rowsLength);
+    return computeActiveStepIndex(timer, rowsLength);
   }
 
   function isTimerFinished() {
     const len = state.rows ? state.rows.length : 0;
-    return len > 0 && timer.actualStepEndMin.length >= len;
+    return computeIsTimerFinished(len, timer.actualStepEndMin.length);
   }
 
-  // Desloca o plano estático (rows) pelo atraso/adiantamento acumulado até
-  // agora: etapas já confirmadas ganham o horário REAL em que terminaram;
-  // as que faltam mantêm a duração planejada, só que a partir do último
-  // checkpoint real (em vez de acumular a partir do zero). Sem isso, se uma
-  // etapa demorar mais que o previsto, todo o resto do cronograma mostrado
-  // continuaria com os horários originais, como se o atraso não tivesse
-  // acontecido.
   function effectiveRows(rows) {
-    const activeIndex = timer.actualStepEndMin.length;
-    if (!rows.length || activeIndex === 0) return rows;
-    const baseReal = timer.actualStepEndMin[Math.min(activeIndex, rows.length) - 1];
-    const basePlanned = rows[Math.min(activeIndex, rows.length) - 1].totalMin;
-    const drift = baseReal - basePlanned;
-    let prevTotal = 0;
-    return rows.map((r, i) => {
-      const effTotalMin = i < activeIndex ? timer.actualStepEndMin[i] : r.totalMin + drift;
-      const effRow = { ...r, totalMin: effTotalMin, duration: Math.max(0, effTotalMin - prevTotal) };
-      prevTotal = effTotalMin;
-      return effRow;
-    });
+    return computeEffectiveRows(rows, timer.actualStepEndMin);
   }
 
   function currentStepIndex(rows, elapsedMin) {
@@ -487,11 +451,7 @@
   // enhanced double inclusive); acima de 60% passa a ALARMAR — nenhum
   // programa publicado vai tão longe, e o texto tranquilizador de antes
   // ficava idêntico pra 51% ou 78%, o que é enganoso (achado N3).
-  function volumeSeverity(fraction) {
-    if (fraction >= 0.6) return "alarm";
-    if (fraction >= 0.5) return "big";
-    return "normal";
-  }
+  // volumeSeverity vem de DecoccaoCore (app-core.js).
 
   function volumeHintText(r) {
     const base = "Volume estimado a retirar (\"puxar\") da tina de mostura e levar pra fervura nesta decocção. " +
@@ -522,18 +482,7 @@
     return text;
   }
 
-  // Espessura da 1ª parcela (V1 da especificação da pseudo-decocção) — não
-  // é um campo que o usuário controla direto, é o que sobra depois que o
-  // alvo da mistura decide quanto de água fica pra 2ª parcela. Piso
-  // publicado pra qualquer mostura levada à fervura: 2,5 L/kg (Brücklmeier
-  // p. 146; Braukaiser dá 2-2,5 L/kg pra decocção comum), 3,0 é mais
-  // confortável. Abaixo de 2,5 o risco de queimar no fundo da panela é
-  // alto — por isso "alarm", não só "big" como na puxada normal.
-  function pseudoEspessuraSeverity(esp) {
-    if (esp < 2.5) return "alarm";
-    if (esp < 3.0) return "warn";
-    return "normal";
-  }
+  // pseudoEspessuraSeverity vem de DecoccaoCore (app-core.js).
 
   function pseudoParcelaHintText(r, severity) {
     let text = "Divisão do malte e da água entre as duas parcelas — a 1ª parcela é a que ferve sozinha; a fração de malte é o " +
@@ -1066,29 +1015,7 @@
   // fervuraTemp enquanto ainda falta devolver parte da puxada, e r.boil só
   // no ponto de encontro real (retorno final) e durante o próprio ciclo de
   // aquecer/ferver a decocção.
-  function annotateDisplayBoil(rows, fervuraTemp) {
-    let kettleActive = false;
-    let waiting = false;
-    for (const r of rows) {
-      if (r.pullsDecoction) { kettleActive = true; waiting = false; }
-      if (kettleActive) {
-        if (r.isFinalReturn) {
-          r.displayBoil = r.boil;
-        } else if (waiting || (r.returnsDecoction && !r.isFinalReturn)) {
-          r.displayBoil = fervuraTemp;
-        } else if (r.boil !== null && r.boil !== undefined) {
-          r.displayBoil = r.boil;
-        } else {
-          r.displayBoil = null;
-        }
-        if (r.returnsDecoction && !r.isFinalReturn) waiting = true;
-      } else {
-        r.displayBoil = null;
-      }
-      if (r.isFinalReturn) { kettleActive = false; waiting = false; }
-    }
-    return rows;
-  }
+  // annotateDisplayBoil vem de DecoccaoCore (app-core.js).
 
   // Faixas de atuação das principais enzimas da mostura (Laus et al. 2022,
   // medidas em mostura isotérmica), sombreadas no gráfico como referência —
@@ -1512,28 +1439,29 @@
   // Um aviso só é fácil de perder — celular no bolso, do outro lado da
   // garagem — e como o avanço agora é 100% manual (via "Cheguei"), sem
   // repetição o cronograma fica congelado ali até alguém notar sozinho
-  // (achado P3a). Repete a cada REPEAT_EVERY_MIN enquanto a etapa não é
-  // confirmada, até um teto de MAX_REPEATS. Estado persistido em
-  // `timer.alarm` (não só em memória) pra sobreviver a um reload sem
-  // re-disparar do zero nem esquecer quantas vezes já tocou (P3c).
-  const ALARM_MAX_REPEATS = 4;
-  const ALARM_REPEAT_EVERY_MIN = 2;
+  // (achado P3a). Repete a cada ALARM_REPEAT_EVERY_MIN enquanto a etapa
+  // não é confirmada, até um teto de ALARM_MAX_REPEATS. Estado persistido
+  // em `timer.alarm` (não só em memória) pra sobreviver a um reload sem
+  // re-disparar do zero nem esquecer quantas vezes já tocou (P3c). Decisão
+  // pura em DecoccaoCore.nextAlarmState (app-core.js, achados N1/Q13) —
+  // aqui só repassa timer/rows e aplica o efeito (som/vibração/save).
   function maybeAlarm(rows, activeIndex, nowMin, finished) {
-    if (!timer.running || finished || activeIndex < 0 || activeIndex >= rows.length || nowMin === null) return;
-    // A primeira etapa de todo programa (Mash In/Empastar) sempre tem
-    // duração zero — sem esta guarda, o alarme disparava no instante
-    // exato de apertar "Iniciar" (nowMin~0 >= totalMin 0), um susto que
-    // não avisa nada que o usuário não soubesse (ele acabou de clicar
-    // "Iniciar" com a própria mão — achado Q13).
-    if (rows[activeIndex].totalMin <= 0) return;
-    if (nowMin < rows[activeIndex].totalMin - 1e-9) return;
-    if (timer.alarm.index !== activeIndex) timer.alarm = { index: activeIndex, count: 0, lastAtMin: -Infinity };
-    if (timer.alarm.count >= ALARM_MAX_REPEATS) return;
-    if (nowMin - timer.alarm.lastAtMin < ALARM_REPEAT_EVERY_MIN) return;
-    timer.alarm.count++;
-    timer.alarm.lastAtMin = nowMin;
-    saveTimer();
-    fireAlarm();
+    const targetTotalMin = activeIndex >= 0 && activeIndex < rows.length ? rows[activeIndex].totalMin : null;
+    const result = nextAlarmState(timer.alarm, {
+      running: timer.running,
+      finished,
+      activeIndex,
+      rowsLength: rows.length,
+      targetTotalMin,
+      nowMin,
+      maxRepeats: ALARM_MAX_REPEATS,
+      repeatEveryMin: ALARM_REPEAT_EVERY_MIN,
+    });
+    timer.alarm = result.alarmState;
+    if (result.fire) {
+      saveTimer();
+      fireAlarm();
+    }
   }
 
   el.timerToggleBtn.addEventListener("click", () => {

@@ -6,6 +6,35 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 versionamento segue [SemVer](https://semver.org/lang/pt-BR/) (`MAJOR.MINOR.PATCH`).
 A versão atual fica em `version.js` e aparece no rodapé do app.
 
+## [1.11.2] — 2026-09-02
+
+### Adicionado
+- **`app-core.js`**: lógica do cronômetro/interface extraída de `app.js`
+  pra um módulo sem DOM — a mesma lacuna que a v1.11.1 tinha documentado
+  como "fora do escopo" ("boa parte dos achados críticos das rodadas
+  3-5 (P1-P10, N1-N8, Q1-Q13) foi justamente nessa camada"), agora
+  fechada. Inclui a repetição/teto do alarme (`nextAlarmState`, achados
+  N1/Q13), o deslocamento do cronograma por atraso/adiantamento
+  (`computeEffectiveRows`, achado P1), o estado do cronômetro
+  (`isTimerStarted`/`computeActiveStepIndex`/`computeIsTimerFinished`),
+  as faixas de severidade de aviso (`volumeSeverity`,
+  `pseudoEspessuraSeverity`), a decisão de mostrar a panela de fervura
+  no gráfico (`annotateDisplayBoil`, achado N4) e a formatação de
+  tempo (`fmtNum`/`fmtHM`/`splitHM`/`fmtClock`). `app.js` importa tudo
+  isso de `window.DecoccaoCore` em vez de ter cópias locais — mesmo
+  padrão de `window.Decoccao`/`methods.js`, zero mudança de
+  comportamento (36 testes novos, mais os 98 já existentes, todos
+  passando; navegador conferido com fluxo completo de cronômetro,
+  atraso/drift, repetição e teto do alarme, conclusão de programa —
+  tudo idêntico a antes da extração).
+- `tests/app-core.test.js`: 36 testes — cobrem especificamente cada um
+  dos achados citados acima com o CENÁRIO EXATO que os expôs
+  originalmente (ex.: `nowMin` sem teto repetindo o alarme na última
+  etapa, atraso de 10min deslocando todas as etapas futuras, "60min"
+  nunca aparecendo por carry de arredondamento).
+- `.github/workflows/test.yml` e `service-worker.js` (cache offline)
+  atualizados pra incluir `app-core.js`.
+
 ## [1.11.1] — 2026-09-02
 
 ### Adicionado
@@ -548,7 +577,8 @@ de volume.
 - Autosave no `localStorage`, predefinições nomeadas (ocultas da UI por
   ora), exportar/importar configuração em JSON.
 
-[1.11.1]: https://github.com/henriqueboaventura/decoccao/compare/d9c32a4...main
+[1.11.2]: https://github.com/henriqueboaventura/decoccao/compare/8ca0ff6...main
+[1.11.1]: https://github.com/henriqueboaventura/decoccao/compare/d9c32a4...8ca0ff6
 [1.11.0]: https://github.com/henriqueboaventura/decoccao/compare/a364f74...d9c32a4
 [1.10.0]: https://github.com/henriqueboaventura/decoccao/compare/f95cf31...a364f74
 [1.9.1]: https://github.com/henriqueboaventura/decoccao/compare/75dccf1...f95cf31

@@ -10,6 +10,7 @@ const ASSETS = [
   "./styles.css",
   "./version.js",
   "./app.js",
+  "./app-core.js",
   "./methods.js",
   "./manifest.webmanifest",
   "./icons/favicon.svg",

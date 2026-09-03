@@ -43,7 +43,8 @@ python3 -m http.server 8080
 
 ## Testes
 
-`methods.js` (o motor de cálculo) tem uma suíte de testes unitários em
+`methods.js` (o motor de cálculo) e `app-core.js` (a lógica do
+cronômetro/interface sem DOM) têm uma suíte de testes unitários em
 `tests/`, usando só o test runner nativo do Node (`node:test` — nenhuma
 dependência de dev):
 
@@ -87,6 +88,12 @@ O que a suíte cobre:
   fórmula direta, a constante térmica travada contra regressão, o teto
   da taxa escalada (achado Q10), a evaporação da 1ª parcela (achado
   Q5) e o guarda de alvo inalcançável (V2).
+- **`app-core.test.js`** — a lógica do cronômetro/interface
+  (`app-core.js`, ver "Estrutura" abaixo): repetição e teto do alarme
+  (achados N1/Q13), o deslocamento do cronograma por atraso/
+  adiantamento (`computeEffectiveRows`, achado P1), as faixas de
+  severidade de aviso, a decisão de mostrar a panela de fervura no
+  gráfico (`annotateDisplayBoil`, achado N4) e a formatação de tempo.
 
 Os fixtures numéricos de `regression.test.js`/`physics.test.js` vêm
 das cinco rodadas de auditoria externa deste projeto (os PDFs "Raio-X",
@@ -94,18 +101,6 @@ das cinco rodadas de auditoria externa deste projeto (os PDFs "Raio-X",
 repositório) — cada valor golden é um número que uma leitura
 independente conferiu à mão contra a literatura, não um número que o
 próprio motor gerou pra si mesmo.
-
-**Fora do escopo desta suíte, por enquanto:** a lógica do cronômetro
-de brassagem e boa parte da interface (`app.js`) — o alarme repetindo,
-o cálculo de atraso/adiantamento (`effectiveRows`), a decisão de
-mostrar a panela de fervura no gráfico (`annotateDisplayBoil`), as
-faixas de severidade de aviso — são funções puras, mas hoje vivem
-dentro da mesma IIFE que manipula o DOM, sem exportação própria.
-Boa parte dos achados críticos das rodadas 3-5 (P1-P10, N1-N8, Q1-Q13)
-foi justamente nessa camada, não em `methods.js` — é a maior lacuna
-real da suíte hoje. Fechar isso pede extrair essas funções pra um
-módulo sem DOM (como `sanitizeParams` acima) antes de testar; é um
-projeto à parte, não uma adição de meia hora.
 
 **Antes de publicar uma nova versão** (bump em `version.js` +
 `CHANGELOG.md`), rode `npm test` — o CI (`.github/workflows/test.yml`)
@@ -121,6 +116,13 @@ bate com o código" não pega regressão nenhuma.
 ## Estrutura
 
 - `index.html`, `styles.css`, `app.js` — interface.
+- `app-core.js` — lógica do cronômetro/interface sem DOM (repetição e
+  teto do alarme, deslocamento do cronograma por atraso/adiantamento,
+  faixas de severidade de aviso, decisão de mostrar a panela de
+  fervura no gráfico, formatação de tempo). `app.js` importa essas
+  funções de `window.DecoccaoCore` em vez de ter cópias locais — mesmo
+  padrão de `methods.js`/`window.Decoccao`, e pelo mesmo motivo: ficar
+  testável (`tests/app-core.test.js`) sem simular um navegador.
 - `methods.js` — motor de cálculo: schema de parâmetros + fórmulas de cada
   método, verificadas contra a literatura de brassagem (Kunze, Narziß,
   Briggs et al., Brücklmeier, Braukaiser Wiki) e conferidas em `tests/`.
