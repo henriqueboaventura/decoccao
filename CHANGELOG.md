@@ -6,6 +6,126 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 versionamento segue [SemVer](https://semver.org/lang/pt-BR/) (`MAJOR.MINOR.PATCH`).
 A versão atual fica em `version.js` e aparece no rodapé do app.
 
+## [1.11.3] — 2026-09-03
+
+Sétima leitura externa (v1.11.2) — os onze achados abertos desde a sexta
+leitura (S1-S11) mais seis sobre a qualidade da suíte nova de
+`app-core.js` (U1-U6). Corrigido tudo, exceto S8 (observação de
+cobertura, sem correção específica pedida) e S11 (documentado em
+`TODO.md`, decisão de manter, não de mudar código — capar o teto do
+`scaledRate` quebraria as fixtures calibradas contra os casos
+publicados).
+
+### Corrigido
+- **S1 (grave)** — o cronômetro anunciava "Programa concluído" no meio
+  da brassagem: quando o alvo da pseudo-decocção fica fora de alcance
+  DEPOIS de já ter etapas confirmadas, `computeSchedule` devolve um
+  plano de 1 linha (o aviso), e esse array de 1 linha estava sendo
+  atribuído a `state.rows` sem condição — o motor do cronômetro lia
+  isso como "só existe 1 etapa no total", então qualquer confirmação
+  já feita virava "acabou". `renderResults()` agora só substitui
+  `state.rows` no ramo alcançável; com o alvo fora de alcance, o
+  cronômetro continua lendo o ÚLTIMO plano válido.
+- **S2** — o tooltip do "tempo real do patamar" dizia "parada a X°C,
+  sem nada mudando nela" mesmo com a perda térmica em espera (T3)
+  ligada, quando a mostura de fato esfria minuto a minuto durante esse
+  patamar. Texto agora condicional a `mashCoolingRate > 0`.
+- **S3** — a espessura mostrada (e usada no alarme) era a de ANTES da
+  fervura da 1ª parcela; com a evaporação (Q5) ligada, a parcela fica
+  mais grossa até o fim da fervura, não mais rala — mostrar a inicial
+  subestimava o risco bem na direção errada. `pseudoEspessura` agora é
+  o valor de FIM de fervura (pior caso, `W1·f/G1`); o valor de
+  montagem fica em `pseudoEspessuraInicial`, citado no tooltip quando
+  os dois divergem.
+- **S4** — "Volume da mostura" (resumo do topo) ignorava a água que
+  evapora na fervura da 1ª parcela da pseudo-decocção, superestimando
+  o volume final combinado. Agora desconta a água evaporada
+  (`W1 - pseudoEspessura·G1`) só pra esse método; os sete métodos de
+  decocção real continuam com a conta original (não têm parâmetro de
+  evaporação).
+- **S5** — o agrupamento de patamares (achado Q2, sexta leitura) só
+  reconhecia continuação por identidade estrutural (`step.mash ===
+  sameMash`), então duas etapas com valor EXPLÍCITO que calhassem de
+  bater na mesma temperatura (ex.: rampa de protease e de
+  sacarificação com o mesmo grau) ficavam separadas em dois patamares,
+  mesmo sem nenhuma mudança de temperatura de verdade entre elas — 9
+  de 432 configurações testadas pela auditoria. `samePlateau` agora
+  também é `true` quando o valor bate com o da linha anterior (seguro:
+  a perda térmica T3 nunca se aplica a etapas de valor explícito, só
+  às `sameMash`, então não reintroduz o drift que o Q2 evitava).
+- **S6** — o `:hover` do botão primário usava `--copper-strong` com
+  texto branco fixo, herdado de antes do Q8; no tema escuro
+  `--copper-strong` é claro demais pra esse texto (2,26:1, falha AA).
+  Novo par `--btn-bg-hover`/`--btn-fg` por tema (7,28:1 no escuro,
+  9,31:1 no claro), mesmo padrão que `--btn-bg`/`--btn-fg` já usava
+  pro estado normal.
+- **S7** — `npm test` não rodava no Node mais recente (`Could not find
+  'tests/**/*.test.js'`, saída 1). `package.json` trocado pro glob
+  simples `tests/*.test.js` (sem recursão, todos os arquivos de teste
+  são flat em `tests/`), verificado tanto por `npm test` quanto por
+  `sh -c` cru.
+- **S9** — com o aviso de "alvo fora de alcance" na tela, `field.focus()`
+  rodava em TODO `renderResults()`, ou seja, a cada tecla digitada em
+  QUALQUER campo da página — o foco voltava pro campo culpado, mesmo
+  que o usuário estivesse digitando em outro lugar. Agora só foca uma
+  vez, ao ENTRAR no estado (`state.pseudoUnreachableFocused`), não em
+  cada render.
+- **S10** — o tooltip de "Volume da mostura" dizia "usado pra calcular
+  quanto puxar em cada decocção" mesmo na pseudo-decocção, que nunca
+  puxa nada. Texto agora condicional ao método (resolvido junto com o
+  S4, mesmo bloco de código).
+
+### Adicionado (testes)
+- `tests/pseudo-decoccao.test.js`: 3 testes pro S3 (espessura final <
+  inicial com evaporação, `pseudoEspessura === pseudoEspessuraInicial`
+  sem evaporação, e o valor bate com `W1·f/G1`).
+- `tests/regression.test.js`: 2 testes pro S5 (Dupla Aprimorada com as
+  duas adições na mesma temperatura vira um único patamar real; com
+  temperaturas diferentes — o padrão de fábrica — continua em grupos
+  separados, zero regressão).
+- **U1** — `tests/app-core.test.js` agora trava `ALARM_MAX_REPEATS` e
+  `ALARM_REPEAT_EVERY_MIN` contra os valores literais (4 e 2) em vez
+  de só reexportar as constantes pro resto da suíte: antes, mudar o
+  teto de repetição do alarme (achado N1) não derrubava teste nenhum.
+- **U2** — a fixture do teste do N4 (painel mostra fervura entre duas
+  adições parciais) usava `boil: 100` inventado; o motor de verdade
+  devolve `boil: 52` ali (o `sameBoil` rastreia a mostura recém-
+  misturada). Com esse valor, o ramo certo e um ramo errado davam a
+  mesma resposta — a fixture não discriminava nada. Trocado por
+  `computeSchedule` de verdade na Dupla Aprimorada com os parâmetros
+  padrão.
+- **U3** — o teste do P1 (deslocamento por atraso) verificava a
+  propriedade certa só no índice em que "horário real" e "previsto +
+  atraso" coincidem por acaso (30 = 30) — não provava nada. Adicionada
+  a asserção no índice 0, onde os dois divergem de verdade (0 vs. 10).
+- **U4** — `computeIsTimerFinished` não tinha teste na fronteira que
+  importa: 13 de 14 etapas confirmadas (ainda não concluído). Testado
+  isoladamente — é a peça que falta pro S1 acima ficar travado contra
+  regressão futura.
+- **U5** — duas asserções tautológicas continuavam na suíte:
+  `pull.pullOriginalMash === pull.pullOriginalMash` (sempre verdadeira,
+  removida — a v1.11.1 já acrescentou um teste de verdade pro mesmo
+  achado C1) e `w1 + (20 - w1) === 20` (verdadeira pra qualquer `w1`,
+  trocada por comparação contra o `pseudoWaterAddL` que o motor
+  realmente devolve).
+
+### Documentado (sem mudança de código)
+- **S11**: o teto de `scaledRate` (taxa de aquecimento escalada da 1ª
+  parcela da pseudo-decocção) limita uma RAZÃO (`heatingRate × 3`), não
+  um valor absoluto — com os parâmetros de fábrica já sai em
+  5,56°C/min, acima do máximo de 5°C/min que o campo "Taxa de
+  aquecimento" declara. Decisão registrada em `TODO.md`: manter como
+  está — um teto absoluto quebraria as fixtures calibradas contra os
+  dois diagramas publicados e o padrão de fábrica (2,03-2,92× nos
+  casos reais). Se a confusão virar problema de verdade, a correção
+  certa é de rótulo/tooltip, não de teto.
+- **U6** (achado de robustez, não bug): `sanitizeParams` mudou de
+  arquivo (`methods.js`) mas `computeSchedule` continua sem chamá-la —
+  decisão mantida: vários testes desta suíte passam valores fora do
+  schema DE PROPÓSITO direto pra `computeSchedule`, pra testar a
+  física em isolamento; adicionar o saneamento ali dentro quebraria
+  esses testes.
+
 ## [1.11.2] — 2026-09-02
 
 ### Adicionado

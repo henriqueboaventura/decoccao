@@ -245,12 +245,41 @@ describe('Q5 (5ª leitura): evaporação da 1ª parcela — W1 é resolvido pro 
   });
 });
 
+describe('S3 (7ª leitura): espessura mostrada é a do FIM da fervura (pior caso), não a de antes de ferver', () => {
+  test('evapRatePctPerHour=0 → pseudoEspessura === pseudoEspessuraInicial (sem evaporação, nada muda)', () => {
+    const rows = D.computeSchedule(method, baseParams({ ambientTemp: 27, proteaseTime: 20, evapRatePctPerHour: 0 }));
+    approxEqual(rows[0].pseudoEspessura, rows[0].pseudoEspessuraInicial, 1e-9, 'espessura sem evaporação');
+  });
+
+  test('com evaporação ligada, pseudoEspessura (fim) é MENOR que pseudoEspessuraInicial (montagem) — menos água, mesmo malte', () => {
+    const rows = D.computeSchedule(method, baseParams({ ambientTemp: 27, proteaseTime: 20, evapRatePctPerHour: 10 }));
+    assert.ok(rows[0].pseudoEspessura < rows[0].pseudoEspessuraInicial,
+      `esperava espessura final (${rows[0].pseudoEspessura}) < inicial (${rows[0].pseudoEspessuraInicial})`);
+  });
+
+  test('pseudoEspessura bate com (W1*f)/G1 — é o valor pós-evaporação, o mesmo usado no alarme', () => {
+    const rows = D.computeSchedule(method, baseParams({ ambientTemp: 27, proteaseTime: 20, evapRatePctPerHour: 10, decoctionTime: 30 }));
+    const r = rows[0];
+    const evapFrac = Math.min(1, Math.max(0, (10 / 100) * (30 / 60)));
+    const f = 1 - evapFrac;
+    const espFinalEsperada = (r.pseudoParcelaW1 * f) / r.pseudoParcelaG1;
+    approxEqual(r.pseudoEspessura, espFinalEsperada, 1e-6, 'espessura final = (W1*f)/G1');
+    approxEqual(r.pseudoEspessuraInicial, r.pseudoParcelaW1 / r.pseudoParcelaG1, 1e-9, 'espessura inicial = W1/G1');
+  });
+});
+
 describe('sanidade estrutural (vale sempre, qualquer parâmetro razoável)', () => {
   test('W1+W2 = água total, G1+G2 = malte total', () => {
+    // achado U5 (7ª leitura): `w1 + (20 - w1)` dá 20 pra QUALQUER w1 —
+    // não testava se o motor calcula W2/G2 direito, só uma identidade
+    // algébrica. Compara contra o W2/G2 que o motor de fato devolve nas
+    // linhas de adição, não contra uma expressão que se cancela sozinha.
     const rows = D.computeSchedule(method, baseParams({}));
     const w1 = rows[0].pseudoParcelaW1, g1 = rows[0].pseudoParcelaG1;
-    approxEqual(w1 + (20 - w1), 20, 1e-9, 'W1+W2');
-    approxEqual(g1 + (5 - g1), 5, 1e-9, 'G1+G2');
+    const aguaRow = rows.find((r) => r.pseudoWaterAddL !== undefined);
+    const malteRow = rows.find((r) => r.pseudoMaltAddKg !== undefined);
+    approxEqual(w1 + aguaRow.pseudoWaterAddL, 20, 1e-9, 'W1+W2');
+    approxEqual(g1 + malteRow.pseudoMaltAddKg, 5, 1e-9, 'G1+G2');
   });
 
   test('volume final da mostura bate com os outros 7 métodos (mesmos defaults)', () => {

@@ -46,21 +46,10 @@ describe('balanço de energia da decocção (C1): d = (T2-T1)/(Tb-T1)', () => {
 });
 
 describe('conservação de energia com puxada devolvida em partes (evita superestimar o volume)', () => {
-  test('Dupla Aprimorada: T1 usado é sempre o da puxada original, nunca intermediário', () => {
-    // A regressão C1 original: usar a temperatura intermediária (já
-    // misturada por uma adição anterior) como T1 da adição seguinte
-    // duplamente contava o calor já devolvido. Confere que pullOriginalMash
-    // (o T1 usado na fórmula) é o MESMO em todas as devoluções da mesma
-    // puxada — nunca muda entre a 1ª e a 2ª adição.
-    const method = D.getMethod('dupla-aprimorada');
-    const rows = D.computeSchedule(method, D.defaultParams(method));
-    const pull = rows.find((r) => r.returnParts > 1);
-    const returns = rows.filter((r) => r.pullIndex === rows.indexOf(pull));
-    assert.ok(returns.length >= 2, 'esperava mais de uma devolução pra este teste fazer sentido');
-    for (const r of returns) {
-      assert.equal(pull.pullOriginalMash, pull.pullOriginalMash, 'T1 fixo em pullOriginalMash, não recalculado por devolução');
-    }
-  });
+  // Havia aqui um teste comparando pull.pullOriginalMash contra ele mesmo
+  // (assert.equal(x, x)) — sempre verdadeiro, não testava nada (achado
+  // U5, 7ª leitura). A proteção de verdade contra a regressão do C1 é o
+  // teste logo abaixo, que trava contra a fórmula aditiva errada.
 
   test('C1 (Raio-X, achado crítico): não regride pra fórmula que SOMA as frações de cada adição', () => {
     // O bug original (v1.0): tela mandava puxar 12,92 L (55,3%) somando

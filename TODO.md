@@ -143,3 +143,37 @@ Conferido: sem a correção, o cenário publicado da especificação
 51,28°C — 0,72°C abaixo do alvo, dentro da faixa de 0,5-2°C estimada
 aqui. Com a correção, sai exatamente 52,00°C em qualquer taxa de
 evaporação, porque `W1` cresce pra compensar a água que vai evaporar.
+
+## Teto do `scaledRate` na pseudo-decocção usa uma razão, não o valor do campo (S11)
+
+**Status:** decisão tomada — mantido como está, documentado aqui em
+vez de mexido no código.
+
+Achado da sétima leitura: `scaledRate` (a taxa de aquecimento escalada
+pra 1ª parcela, menor massa térmica que a mostura inteira) tem teto em
+`heatingRate * 3` (`methods.js`, `buildPseudoDecoccao`), não num valor
+absoluto — com os parâmetros de fábrica ela já sai em 5,56°C/min,
+acima do máximo de 5°C/min que o próprio campo "Taxa de aquecimento"
+declara (`HEATING_RATE.max`).
+
+Cogitei capar em `Math.min(heatingRate * 3, HEATING_RATE.max)`, mas o
+comentário já existente em `methods.js` (linhas acima do cálculo)
+documenta que o teto de 3× foi calibrado deliberadamente contra os
+casos reais publicados (padrão de fábrica e os dois diagramas do Beer
+School, 2,03-2,92×) e que "um teto mais apertado quebraria essas
+contas" — são as mesmas fixtures que `scripts/verify_pseudo_decoccao.js`
+confere. Um teto absoluto de 5°C/min teria capado exatamente o caso de
+fábrica, quebrando essa referência.
+
+A raiz do "achado" é uma comparação entre duas grandezas diferentes:
+`heatingRate` é a taxa configurada pra mostura INTEIRA; `scaledRate` é
+uma taxa DERIVADA, específica da massa térmica menor da 1ª parcela —
+fisicamente é esperado que ela seja mais rápida que o campo. O campo
+"Taxa de aquecimento" nunca teve a intenção de ser um teto físico
+universal pra qualquer sub-massa da mostura, só um input pro cálculo
+do tempo de rampa da mostura completa. Ainda assim, o número mostrado
+pode confundir quem olha (parece que a ferramenta "furou" o próprio
+limite que ela mesma declara) — se algum dia isso virar um problema de
+verdade, a correção certa é de rótulo/tooltip (deixar claro que é uma
+taxa por parcela, escalada), não abaixar o teto de 3× e quebrar as
+fixtures.

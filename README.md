@@ -51,8 +51,15 @@ dependência de dev):
 ```bash
 npm test
 # ou, sem npm:
-node --test tests/
+node --test tests/*.test.js
 ```
+
+(`tests/*.test.js` explícito, não o diretório sozinho — a descoberta de
+arquivo do `node --test` varia entre versões do Node; o glob `*` é
+expandido pelo shell antes de chegar no Node, então funciona igual em
+qualquer versão. Achado S7 da sétima leitura: `npm test` não rodava
+nenhum teste, saindo com erro, num Node mais novo do que o testado
+aqui.)
 
 O que a suíte cobre:
 

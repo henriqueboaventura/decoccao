@@ -75,6 +75,7 @@
   let state = {
     methodId: localStorage.getItem(LAST_METHOD_KEY) || METHODS[0].id,
     params: {},
+    pseudoUnreachableFocused: false,
   };
 
   // Cronômetro por evento: a etapa ativa é `actualStepEndMin.length` — não
@@ -488,6 +489,14 @@
     let text = "Divisão do malte e da água entre as duas parcelas — a 1ª parcela é a que ferve sozinha; a fração de malte é o " +
       "campo \"% do malte na 1ª parcela\", mas a água NÃO é um campo direto: ela é calculada a partir do alvo da 1ª rampa, pra " +
       "acertar a temperatura exatamente quando o malte restante entrar. O resultado é a espessura desta parcela.";
+    // Com evaporação ligada, a espessura só piora da montagem pro fim da
+    // fervura (menos água, mesmo malte) — o número mostrado (e o alarme)
+    // já são os do FIM, o pior caso; sem isso a tela mostrava a espessura
+    // de antes de ferver, subestimando o risco na fervura mais longa que
+    // evapora mais (achado S3, sexta leitura).
+    if (r.pseudoEspessuraInicial !== undefined && Math.abs(r.pseudoEspessuraInicial - r.pseudoEspessura) > 0.005) {
+      text += ` Com a evaporação da fervura, ela some de ${fmtNum(r.pseudoEspessuraInicial)} L/kg (ao montar) pra ${fmtNum(r.pseudoEspessura)} L/kg (no fim da fervura, o número usado aqui e no alarme — é o pior caso).`;
+    }
     if (severity === "alarm") {
       text += ` Atenção: ${fmtNum(r.pseudoEspessura)} L/kg está abaixo do piso de 2,5 L/kg publicado pra qualquer mostura levada ` +
         "à fervura — risco alto de queimar no fundo da panela. Baixe a fração de malte da 1ª parcela pra ralear.";
@@ -510,8 +519,16 @@
     const decoctionSteps = r.plateauHasSaccRest
       ? "a transferência, o aquecimento, a sacarificação e a fervura da decocção"
       : "a transferência, o aquecimento e a fervura da decocção"; // sem sacarificação: vai direto à fervura (ex.: 2ª do Hochkurz)
+    // "sem nada mudando nela" só é verdade com a perda térmica em espera
+    // (T3) desligada — ligada, a mostura esfria minuto a minuto durante
+    // esse mesmo patamar (é o que o parâmetro faz), e o tooltip afirmava o
+    // oposto do que a tela ao lado mostra (achado S2, sexta leitura).
+    const coolingOn = Number(state.params.mashCoolingRate) > 0;
+    const holdText = coolingOn
+      ? `começando a ${fmtNum(r.mash)}°C, mas esfriando aos poucos por causa da perda térmica em espera (parâmetro ligado)`
+      : `parada a ${fmtNum(r.mash)}°C, sem nada mudando nela`;
     let text = `O tempo digitado neste campo (${fmtNum(r.duration)} min) é só o repouso desta etapa. ` +
-      `Somando ${decoctionSteps} que vêm logo depois — enquanto a mostura principal fica parada a ${fmtNum(r.mash)}°C, sem nada mudando nela —, o tempo REAL que a mostura passa nesse patamar é ${fmtNum(r.realPlateauMin)} min.`;
+      `Somando ${decoctionSteps} que vêm logo depois — enquanto a mostura principal fica ${holdText} —, o tempo REAL que a mostura passa nesse patamar é ${fmtNum(r.realPlateauMin)} min.`;
     if (r.mash >= 30 && r.mash <= 45 && r.realPlateauMin > 45) {
       text += " Atenção: mais de 45min entre 30-45°C é a janela de crescimento de bactérias láticas (Sauergut) sem controle — se a intenção não é acidificar de propósito, vale reduzir esse tempo (puxar antes, ou ajustar as temperaturas).";
     }
@@ -632,29 +649,54 @@
           : `Baixe a temperatura ${fieldLabel} para no máximo ${fmtNum(u.maxTarget)}°C.`);
       // Abre "Configurações avançadas" (o campo culpado quase sempre está
       // lá dentro) e foca nele — sem isso o aviso aparece, mas o campo que
-      // resolve pode estar atrás de um <details> fechado (achado Q1).
-      const details = document.querySelector(".advanced-settings");
-      if (details) details.open = true;
-      const field = document.getElementById(fieldId);
-      if (field) field.focus({ preventScroll: false });
+      // resolve pode estar atrás de um <details> fechado (achado Q1). Só na
+      // ENTRADA no estado inalcançável, não em todo render: senão o foco é
+      // roubado de volta pra esse campo a cada dígito digitado em qualquer
+      // lugar da página, quebrando a digitação em outros campos enquanto o
+      // aviso está visível (achado S9, sétima leitura).
+      if (!state.pseudoUnreachableFocused) {
+        const details = document.querySelector(".advanced-settings");
+        if (details) details.open = true;
+        const field = document.getElementById(fieldId);
+        if (field) field.focus({ preventScroll: false });
+        state.pseudoUnreachableFocused = true;
+      }
     } else {
+      state.pseudoUnreachableFocused = false;
       const total = rows.length ? rows[rows.length - 1].totalMin : 0;
       state.total = total;
 
       el.stepCount.textContent = String(rows.length);
 
-      const mashVolumeL = totalMashVolumeL(state.params);
-      el.mashVolume.textContent = `${fmtNum(mashVolumeL)} L`;
-      ensureHint(el.mashVolumeWrap,
-        `Volume total estimado da mostura (água + malte molhado): ${fmtNum(state.params.waterVolume)}L de água ` +
-        `+ ${fmtNum(state.params.grainWeight)}kg de malte × 0,67L/kg = ${fmtNum(mashVolumeL)}L. ` +
-        "É o volume de referência usado pra calcular quanto puxar em cada decocção."
-      );
-
       // Pseudo-decocção não puxa nada — "Maior puxada" perde o sentido.
       // "1ª parcela" (a que ferve) é o número equivalente: dimensiona a
       // mesma panela (especificação §7).
       const pseudoParcelaRow = rows.find((r) => r.pseudoParcelaW1 !== undefined);
+
+      const grossMashVolumeL = totalMashVolumeL(state.params);
+      // Na pseudo-decocção, a água que evapora na fervura da 1ª parcela
+      // some do volume final da mostura combinada — sem isso o número
+      // mostrado ficava sempre o de antes de ferver, otimista pro volume
+      // real (achado S4, sétima leitura).
+      const evaporatedL = pseudoParcelaRow
+        ? Math.max(0, pseudoParcelaRow.pseudoParcelaW1 - pseudoParcelaRow.pseudoEspessura * pseudoParcelaRow.pseudoParcelaG1)
+        : 0;
+      const mashVolumeL = grossMashVolumeL - evaporatedL;
+      el.mashVolume.textContent = `${fmtNum(mashVolumeL)} L`;
+      if (pseudoParcelaRow) {
+        ensureHint(el.mashVolumeWrap,
+          `Volume final estimado da mostura já combinada (depois da fervura da 1ª parcela): ${fmtNum(state.params.waterVolume)}L de água ` +
+          `+ ${fmtNum(state.params.grainWeight)}kg de malte × 0,67L/kg − ${fmtNum(evaporatedL)}L evaporados na fervura = ${fmtNum(mashVolumeL)}L. ` +
+          "Não é usado pra puxar nada — pseudo-decocção não puxa, ferve a 1ª parcela inteira (veja abaixo)."
+        );
+      } else {
+        ensureHint(el.mashVolumeWrap,
+          `Volume total estimado da mostura (água + malte molhado): ${fmtNum(state.params.waterVolume)}L de água ` +
+          `+ ${fmtNum(state.params.grainWeight)}kg de malte × 0,67L/kg = ${fmtNum(mashVolumeL)}L. ` +
+          "É o volume de referência usado pra calcular quanto puxar em cada decocção."
+        );
+      }
+
       if (pseudoParcelaRow) {
         el.maxPullLabel.textContent = "1ª parcela:";
         const totalL = pseudoParcelaRow.pseudoParcelaG1 + pseudoParcelaRow.pseudoParcelaW1;
@@ -676,12 +718,23 @@
             : "Este método não puxa decocção."
         );
       }
+      state.rows = rows;
     }
-    state.rows = rows;
+    // Quando inalcançável, `rows` é o placeholder de 1 linha só (ver
+    // computeSchedule) — NÃO pode alimentar o cronômetro: activeStepIndex/
+    // isTimerFinished comparariam etapas já confirmadas (do cronograma de
+    // verdade, podem ser várias) contra esse "total" de 1, e o programa era
+    // declarado concluído no meio da brassagem, com "Cheguei" desabilitado
+    // e o botão principal oferecendo apagar o registro (achado S1, grave).
+    // O cronômetro continua operando sobre o ÚLTIMO cronograma alcançável
+    // (state.rows de um render anterior) até os parâmetros voltarem a
+    // fazer sentido — é o que está fisicamente na panela, o aviso é sobre
+    // os parâmetros, não sobre a brassagem em andamento.
+    const rowsForTimer = unreachable ? (state.rows || rows) : rows;
 
-    const activeIndex = activeStepIndex(rows.length);
-    const finished = activeIndex >= rows.length && rows.length > 0;
-    const displayRows = activeIndex >= 0 ? effectiveRows(rows) : rows;
+    const activeIndex = activeStepIndex(rowsForTimer.length);
+    const finished = activeIndex >= rowsForTimer.length && rowsForTimer.length > 0;
+    const displayRows = activeIndex >= 0 ? effectiveRows(rowsForTimer) : rowsForTimer;
     annotateDisplayBoil(displayRows, state.params.fervuraTemp);
     state.displayRows = displayRows;
 

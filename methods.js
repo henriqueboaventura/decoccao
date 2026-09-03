@@ -187,7 +187,14 @@ function runSteps(steps, params) {
       // marcada aqui, na geração, porque só aqui se sabe se o PASSO
       // (não o valor final de mash, que a perda térmica pode ter mudado)
       // é uma continuação (sameMash) ou a chegada num patamar novo.
-      samePlateau: step.mash === sameMash,
+      // Passo com valor EXPLÍCITO (não sameMash) que calha de bater com o
+      // valor anterior — ex.: rampa de protease→β com as duas temps iguais
+      // — também é fisicamente o mesmo patamar; sem isso o Q2 (acima)
+      // separava 9 de 432 configurações que não tinham mudado de
+      // temperatura nenhuma (achado S5, sétima leitura). Sem risco do
+      // problema de drift do T3 que motivou o Q2: cooling só se aplica a
+      // passos sameMash (linha acima), nunca aos de valor explícito.
+      samePlateau: step.mash === sameMash || mash === prev.mash,
     };
     rows.push(row);
 
@@ -714,11 +721,20 @@ function buildPseudoDecoccao() {
       return row;
     }
 
-    const esp = W1 / G1;
+    // A espessura de risco é a do FIM da fervura (depois da evaporação),
+    // não a de quando a parcela é montada — a água só diminui daí em
+    // diante, então é quando a parcela fica mais grossa e o risco de
+    // queimar no fundo é maior. Mostrar a de antes da fervura subestimava
+    // o risco bem na direção errada quando a evaporação está ligada
+    // (achado S3, sexta leitura): o alarme podia ficar verde numa parcela
+    // que termina a fervura mais grossa que o piso.
+    const espInicial = W1 / G1;
+    const espFinal = (W1 * f) / G1;
     push("Empastar a 1ª parcela", 0, Tamb, {
       pseudoParcelaW1: W1,
       pseudoParcelaG1: G1,
-      pseudoEspessura: esp,
+      pseudoEspessura: espFinal,
+      pseudoEspessuraInicial: espInicial,
       pseudoSplitPct: num(params.grainSplitPct),
     });
     // pseudoScaledHeat: essas duas etapas usam scaledRate (só a 1ª parcela

@@ -3,7 +3,7 @@
   "private": true,
   "description": "Calculadora de programas de mostura por decocção — PWA estática, zero dependências de runtime. Os testes usam só o runner nativo do Node (node:test), sem dependências de dev também.",
   "scripts": {
-    "test": "node --test tests/"
+    "test": "node --test tests/*.test.js"
   },
   "engines": {
     "node": ">=18"

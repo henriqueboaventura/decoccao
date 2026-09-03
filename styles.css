@@ -17,6 +17,11 @@
      branco continuar funcionando. */
   --btn-bg: #8f4a22;
   --btn-fg: #ffffff;
+  /* :hover do botão primário — precisa do próprio par bg/fg por tema, não
+     dá pra reusar --copper-strong+branco fixo: no escuro --copper-strong é
+     claro demais pro texto branco (2,26:1, achado S6, sétima leitura),
+     o mesmo motivo que já valeu pro estado normal (Q8, acima). */
+  --btn-bg-hover: #6f3818;
   --amber: #c98a1f;
   --amber-strong: #8a5d00;
   --steel: #386079;
@@ -58,6 +63,7 @@
        aqui), texto escuro por cima. Medido 5,60:1 (achado Q8). */
     --btn-bg: #d17f3f;
     --btn-fg: #201a12;
+    --btn-bg-hover: #e69657;
     --amber: #e0a83f;
     --amber-strong: #e0a83f;
     --steel: #6fa0bd;
@@ -85,6 +91,7 @@
   --copper-strong: #e69657;
   --btn-bg: #d17f3f;
   --btn-fg: #201a12;
+  --btn-bg-hover: #e69657;
   --amber: #e0a83f;
   --amber-strong: #e0a83f;
   --steel: #6fa0bd;
@@ -482,7 +489,7 @@ button, select, input {
 }
 .btn:hover { border-color: var(--copper); }
 .btn--primary { background: var(--btn-bg); border-color: var(--btn-bg); color: var(--btn-fg); }
-.btn--primary:hover { background: var(--copper-strong); border-color: var(--copper-strong); color: #fff9ef; }
+.btn--primary:hover { background: var(--btn-bg-hover); border-color: var(--btn-bg-hover); color: var(--btn-fg); }
 .btn--ghost { background: transparent; }
 .btn--danger:hover { border-color: var(--danger); color: var(--danger); }
 .btn--danger-fill { background: var(--danger); border-color: var(--danger); color: #fff9ef; }

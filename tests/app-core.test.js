@@ -8,6 +8,7 @@
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
 const C = require('../app-core.js');
+const D = require('../methods.js');
 
 describe('fmtHM / splitHM — formatação de tempo total', () => {
   test('menos de 1h mostra só minutos', () => {
@@ -96,19 +97,29 @@ describe('annotateDisplayBoil — o que a panela de fervura mostra em cada linha
   });
 
   test('puxada com duas devoluções: continua mostrando fervura entre a 1ª e a 2ª adição, não "desce" pra mostura (bug original do N4)', () => {
-    const rows = [
-      row({ pullsDecoction: true, boil: 35 }),
-      row({ boil: 100 }),
-      row({ returnsDecoction: true, isFinalReturn: false, boil: 100, mash: 52 }), // 1ª adição, ainda não é a última
-      row({ boil: 100 }), // panela ainda tem o resto fervendo, esperando a 2ª adição
-      row({ returnsDecoction: true, isFinalReturn: true, boil: 100, mash: 66 }), // 2ª adição, agora sim esvazia
-      row({}),
-    ];
-    C.annotateDisplayBoil(rows, 100);
-    assert.equal(rows[2].displayBoil, 100, '1ª adição: painel ainda mostra fervura, não a mostura');
-    assert.equal(rows[3].displayBoil, 100, 'entre as duas adições: painel continua mostrando fervura (achado N4)');
-    assert.equal(rows[4].displayBoil, 100, '2ª adição (a final): mostra o boil de verdade');
-    assert.equal(rows[5].displayBoil, null, 'só depois da última devolução a panela esvazia');
+    // Fixture do motor de verdade (Dupla Aprimorada, achado U2, 7ª
+    // leitura) — não à mão. A versão anterior usava boil:100 nas linhas
+    // entre as duas adições, mas o motor real devolve boil:52 ali
+    // (sameBoil rastreia a mostura recém-misturada, não a fervura) — um
+    // valor que fazia o ramo certo (usa fervuraTemp) e um errado (usa
+    // r.boil direto) darem a MESMA resposta, então a fixture não
+    // discriminava nada.
+    const method = D.getMethod('dupla-aprimorada');
+    const rows = D.computeSchedule(method, D.defaultParams(method));
+    C.annotateDisplayBoil(rows, D.defaultParams(method).fervuraTemp);
+
+    const primeiraAdicao = rows.findIndex((r) => r.label.includes('1ª adição'));
+    const rampaProteina = primeiraAdicao + 1;
+    const segundaAdicao = rows.findIndex((r) => r.label.includes('2ª adição'));
+
+    assert.equal(rows[primeiraAdicao].boil, 52, 'pré-condição: o motor real usa 52 aqui, não 100 (senão este teste não prova nada)');
+    assert.equal(rows[primeiraAdicao].displayBoil, 100, '1ª adição: painel ainda mostra a fervura, não a mostura recém-misturada');
+    assert.equal(rows[rampaProteina].label, 'Rampa de proteína');
+    assert.equal(rows[rampaProteina].boil, 52, 'pré-condição: idem, motor real usa 52');
+    assert.equal(rows[rampaProteina].displayBoil, 100, 'entre as duas adições: painel continua mostrando fervura (achado N4)');
+    assert.equal(rows[segundaAdicao].isFinalReturn, true);
+    assert.equal(rows[segundaAdicao].displayBoil, rows[segundaAdicao].boil, '2ª adição (a final): mostra o boil de verdade');
+    assert.equal(rows[segundaAdicao + 1].displayBoil, null, 'só depois da última devolução a panela esvazia');
   });
 });
 
@@ -140,6 +151,15 @@ describe('isTimerStarted / computeActiveStepIndex / computeIsTimerFinished', () 
     assert.equal(C.computeIsTimerFinished(14, 11), false);
   });
 
+  test('13 de 14 confirmadas — a última faltando por um: ainda não terminou (achado U4, 7ª leitura)', () => {
+    // A fronteira que importa de verdade: um mutante que declarasse o
+    // programa concluído uma etapa antes do fim (achado S1) passava pelos
+    // outros casos (11/14, 11/11, 0/0) sem ser pego — só o "falta
+    // exatamente uma" discrimina ">=" de ">" no ponto onde alguém
+    // realmente ia notar, no meio de uma brassagem de verdade.
+    assert.equal(C.computeIsTimerFinished(14, 13), false);
+  });
+
   test('0 etapas no total: nunca "terminado" (programa vazio não é um estado válido de conclusão)', () => {
     assert.equal(C.computeIsTimerFinished(0, 0), false);
   });
@@ -167,6 +187,12 @@ describe('computeEffectiveRows — desloca o plano pelo atraso/adiantamento acum
   test('atraso de 10min na 2ª etapa desloca TODAS as etapas futuras pelo mesmo atraso (o próprio achado P1)', () => {
     // Confirmou a 2ª etapa (previsto 20min) só aos 30min reais — 10min de atraso.
     const result = C.computeEffectiveRows(plan, [0, 30]);
+    // Índice 0 é o único onde real (0) e previsto+atraso (0+10=10)
+    // DIVERGEM — sem esta linha, uma implementação errada que aplicasse
+    // "previsto+atraso" até em etapas JÁ confirmadas passava despercebida,
+    // porque no índice 1 as duas fórmulas dão 30 por coincidência (achado
+    // U3, 7ª leitura).
+    assert.equal(result[0].totalMin, 0, 'etapa já confirmada (Mash In) usa o horário REAL, não previsto+atraso');
     assert.equal(result[1].totalMin, 30, 'etapa já confirmada usa o horário REAL');
     assert.equal(result[2].totalMin, 35, '25 previsto + 10 de atraso');
     assert.equal(result[3].totalMin, 55, '45 previsto + 10 de atraso — cabeçalho e escada têm que concordar nisso');
@@ -188,9 +214,18 @@ describe('computeEffectiveRows — desloca o plano pelo atraso/adiantamento acum
 });
 
 describe('nextAlarmState — repetição e teto do alarme (achado N1, 4ª leitura, e Q13, 5ª leitura)', () => {
+  // As constantes de verdade (achado U1, 7ª leitura): usar literais aqui
+  // em vez de C.ALARM_MAX_REPEATS/C.ALARM_REPEAT_EVERY_MIN deixava um
+  // mutante trocar o teto de 4 pra 1 (o achado N1 inteiro voltando) sem
+  // nenhum teste falhar — porque o teste testava o PRÓPRIO número
+  // hardcoded, nunca o que o app.js de fato importa e usa.
+  test('as constantes exportadas são as que o app.js espera', () => {
+    assert.equal(C.ALARM_MAX_REPEATS, 4, 'mudou o teto de repetições do alarme — confirme que é intencional');
+    assert.equal(C.ALARM_REPEAT_EVERY_MIN, 2, 'mudou o intervalo entre repetições — confirme que é intencional');
+  });
   const baseOpts = {
     running: true, finished: false, activeIndex: 10, rowsLength: 11,
-    targetTotalMin: 138, maxRepeats: 4, repeatEveryMin: 2,
+    targetTotalMin: 138, maxRepeats: C.ALARM_MAX_REPEATS, repeatEveryMin: C.ALARM_REPEAT_EVERY_MIN,
   };
 
   test('etapa 0 (duração zero) nunca dispara — nem no instante de apertar "Iniciar" (Q13)', () => {

@@ -74,3 +74,30 @@ describe('regressão · Dupla Aprimorada, volume de cada adição parcial (N9)',
     assert.ok(Math.abs(sum - pull.decoctionVolumeL) < EPS, 'soma das partes deve bater com o total da puxada, exatamente');
   });
 });
+
+describe('S5 (7ª leitura): samePlateau também agrupa patamares declarados que calham de bater em valor', () => {
+  test('1ª e 2ª adição da Dupla Aprimorada com a MESMA temperatura viram um único patamar real', () => {
+    const method = D.getMethod('dupla-aprimorada');
+    const params = { ...D.defaultParams(method), proteinRestTemp: 52, saccRestTemp: 52 };
+    const rows = D.computeSchedule(method, params);
+    const primeiraAdicao = rows.findIndex((r) => r.label.includes('1ª adição'));
+    const segundaAdicao = rows.findIndex((r) => r.label.includes('2ª adição'));
+    // pré-condição: as duas etapas realmente batem em valor, senão o teste não prova nada
+    assert.equal(rows[primeiraAdicao].mash, rows[segundaAdicao].mash, 'pré-condição: mesma temperatura nas duas adições');
+    assert.equal(rows[segundaAdicao].samePlateau, true, '2ª adição declara valor explícito, mas é o MESMO da 1ª — fisicamente o mesmo patamar');
+    // sem a correção do S5, a 2ª adição começava um grupo NOVO — o tempo real
+    // marcado na "Rampa de proteína" pararia em 18min (só ela mesma), sem
+    // somar o que vem depois (2ª adição, rampa de sacarificação etc., tudo
+    // ainda a 52°C). Com o grupo unido, soma até o fim do patamar de verdade.
+    const rampaProteina = rows.findIndex((r) => r.label === 'Rampa de proteína');
+    assert.equal(rows[rampaProteina].realPlateauMin, 102, 'tempo real do patamar unido (proteína + 2ª adição + sacarificação)');
+    assert.equal(rows[segundaAdicao].realPlateauMin, undefined, '2ª adição não deve mais marcar um patamar próprio — foi engolida no grupo anterior');
+  });
+
+  test('com temperaturas diferentes (padrão de fábrica), continuam em grupos separados — zero regressão', () => {
+    const method = D.getMethod('dupla-aprimorada');
+    const rows = D.computeSchedule(method, D.defaultParams(method));
+    const segundaAdicao = rows.findIndex((r) => r.label.includes('2ª adição'));
+    assert.equal(rows[segundaAdicao].samePlateau, false, 'temperaturas diferentes por padrão — continua sendo um patamar novo');
+  });
+});
