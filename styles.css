@@ -242,7 +242,8 @@ button, select, input {
   border-radius: var(--radius);
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 0.78rem;
+  /* 16px mínimo: abaixo disso o Safari iOS dá zoom automático no foco. */
+  font-size: 1rem;
   letter-spacing: 0.02em;
   text-transform: uppercase;
 }
@@ -450,7 +451,8 @@ button, select, input {
   border-radius: var(--radius);
   padding: 0.3rem 0.4rem;
   font-family: var(--font-data);
-  font-size: 0.88rem;
+  /* 16px mínimo: abaixo disso o Safari iOS dá zoom automático no foco. */
+  font-size: 1rem;
   color: var(--text);
   text-align: right;
 }
@@ -508,7 +510,8 @@ button, select, input {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 0.4rem 0.4rem;
-  font-size: 0.78rem;
+  /* 16px mínimo: abaixo disso o Safari iOS dá zoom automático no foco. */
+  font-size: 1rem;
 }
 
 .autosave-note {
@@ -850,7 +853,8 @@ dialog.modal::backdrop { background: rgba(10, 8, 5, 0.55); }
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 0.5rem 0.6rem;
-  font-size: 0.9rem;
+  /* 16px mínimo: abaixo disso o Safari iOS dá zoom automático no foco. */
+  font-size: 1rem;
   margin-bottom: 0.9rem;
 }
 .modal__actions { display: flex; gap: 0.5rem; justify-content: flex-end; }

@@ -6,4 +6,4 @@
 // na página quanto dentro do service worker — e um `const` no topo de um
 // script clássico não vira propriedade de `window`, só fica no escopo
 // léxico do script.
-self.APP_VERSION = "1.11.3";
+self.APP_VERSION = "1.11.4";

@@ -6,6 +6,15 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 versionamento segue [SemVer](https://semver.org/lang/pt-BR/) (`MAJOR.MINOR.PATCH`).
 A versão atual fica em `version.js` e aparece no rodapé do app.
 
+## [1.11.4] — 2026-09-03
+
+### Corrigido
+- **Zoom automático no iOS** — `<select>` de método/predefinição, campo
+  numérico de parâmetros e input de nome da predefinição tinham
+  `font-size` abaixo de 16px; Safari iOS dá zoom automático ao focar
+  qualquer campo abaixo desse limiar. Subido pra `1rem` (16px) nos
+  quatro.
+
 ## [1.11.3] — 2026-09-03
 
 Sétima leitura externa (v1.11.2) — os onze achados abertos desde a sexta
