@@ -108,8 +108,20 @@ function annotateRealPlateauTimes(rows) {
       // própria linha já mostra — senão a única "diferença" era a etapa de
       // transição (já excluída acima), e o aviso ficaria redundante (ex.:
       // Mash Out, onde não há decocção nenhuma rodando depois).
-      if (Math.abs(sum - rows[target].duration) > 0.05) {
+      //
+      // Unilateral, não `Math.abs`: a frase do tooltip só faz sentido num
+      // sentido ("somando o que vem depois, o tempo REAL é maior que o
+      // digitado"). Com repouso zero, `sum` fica MENOR que a duração da
+      // própria linha, e a diferença absoluta passava do limiar do mesmo
+      // jeito — o app anunciava "tempo real" menor que o digitado, o
+      // oposto do que a frase diz (achado W1, nona leitura).
+      if (sum - rows[target].duration > 0.05) {
         rows[target].realPlateauMin = sum;
+        // Temperatura ao FIM do patamar real (última linha do grupo) — com
+        // a perda térmica em espera ligada, a mostura chega mais fria do
+        // que começou, e o tooltip precisa dizer pra onde ela cai, não só
+        // de onde ela partiu (achado V3, nona leitura).
+        rows[target].realPlateauEndMash = rows[j - 1].mash;
         // Pro texto do tooltip não citar uma sacarificação que não existe
         // nesse patamar específico (ex.: 2ª decocção do Hochkurz, que vai
         // direto à fervura — ver N2/restsForConversion).
@@ -154,15 +166,27 @@ function runSteps(steps, params) {
   const coolingRate = num(params.mashCoolingRate, 0);
 
   const rows = [];
-  let prev = { mash: null, boil: null };
+  let prev = { mash: null, boil: null, declaredMash: null };
   let totalMin = 0;
   let pullIndex = null;
   let pullOriginalMash = null;
   let idleActive = false;
   let idleCoolingLoss = 0;
+  // W6 (nona leitura, aberto desde a 3ª): a pseudo-decocção recusa um alvo
+  // fisicamente impossível — os sete métodos de decocção REAL não tinham
+  // nada disso. Guarda só a PRIMEIRA violação encontrada (a que o
+  // brassador precisa resolver primeiro).
+  let decoctionUnreachable = null;
   steps.forEach((step, idx) => {
     const duration = Math.max(0, num(step.duration(params, prev)));
     let mash = step.mash(params, prev);
+    // Valor que o PASSO declara, antes de descontar a perda térmica em
+    // espera (T3) — usado só pra identidade de patamar (samePlateau,
+    // abaixo). `mash` alguns parágrafos adiante já vem com a perda
+    // descontada; comparar DEPOIS-da-perda com DEPOIS-da-perda deixa dois
+    // patamares diferentes coincidirem por acaso (achado V2, nona
+    // leitura) — comparar declarada com declarada não tem esse acaso.
+    const declaredMash = mash;
     const boil = step.boil ? step.boil(params, prev) : null;
 
     if (step.pullsDecoction) {
@@ -194,7 +218,7 @@ function runSteps(steps, params) {
       // temperatura nenhuma (achado S5, sétima leitura). Sem risco do
       // problema de drift do T3 que motivou o Q2: cooling só se aplica a
       // passos sameMash (linha acima), nunca aos de valor explícito.
-      samePlateau: step.mash === sameMash || mash === prev.mash,
+      samePlateau: step.mash === sameMash || declaredMash === prev.declaredMash,
     };
     rows.push(row);
 
@@ -212,6 +236,16 @@ function runSteps(steps, params) {
       const t1 = pullOriginalMash - idleCoolingLoss;
       const tb = num(params.fervuraTemp);
       const denom = tb - t1;
+      // Condição de viabilidade: o alvo do retorno só é alcançável se ficar
+      // ESTRITAMENTE entre a temperatura da mostura no instante da puxada
+      // (t1 — devolver decocção nunca esfria, só esquenta) e a temperatura
+      // da própria decocção fervendo (tb — não devolve mais quente que ela
+      // mesma). Fora dessa faixa, o grampo `Math.max(0, Math.min(1, …))`
+      // logo abaixo aceitava qualquer valor como se fosse um ponto normal
+      // de 0-100%, sem nunca avisar (achado W6).
+      if (!decoctionUnreachable && (denom <= 0 || mash <= t1 || mash >= tb)) {
+        decoctionUnreachable = { stepLabel: step.label, target: mash, minTarget: t1, maxTarget: tb };
+      }
       const fraction = denom > 0 ? Math.max(0, Math.min(1, (mash - t1) / denom)) : 0;
       const pullRow = rows[pullIndex];
       pullRow.decoctionFraction = fraction;
@@ -224,7 +258,7 @@ function runSteps(steps, params) {
       if (isFinalReturn[idx]) idleActive = false;
     }
 
-    prev = { mash, boil: boil !== null ? boil : prev.boil };
+    prev = { mash, boil: boil !== null ? boil : prev.boil, declaredMash };
   });
 
   // Quanto volta em CADA adição, quando uma puxada é devolvida em mais de
@@ -263,6 +297,12 @@ function runSteps(steps, params) {
       prevCoolingLoss = nextCoolingLoss;
     });
   });
+
+  if (decoctionUnreachable) {
+    const placeholder = [{ label: "Programa", duration: 0, totalMin: 0, totalHours: 0, mash: params.mashInTemp !== undefined ? num(params.mashInTemp) : null, boil: null }];
+    placeholder.decoctionUnreachable = decoctionUnreachable;
+    return placeholder;
+  }
 
   return rows;
 }

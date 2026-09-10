@@ -6,6 +6,63 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 versionamento segue [SemVer](https://semver.org/lang/pt-BR/) (`MAJOR.MINOR.PATCH`).
 A versão atual fica em `version.js` e aparece no rodapé do app.
 
+## [1.11.5] — 2026-09-10
+
+Nona leitura externa — três achados abertos desde a 8ª (V1 grave, V2, V3)
+mais cinco novos (W1-W5) e um item de viabilidade aberto desde a 3ª
+leitura (W6, o maior desta rodada). Tudo corrigido.
+
+### Corrigido
+- **V1 (grave)** — o conserto do S1 não sobrevivia a um recarregamento:
+  `state.rows` só era atribuído no ramo alcançável, então uma carga fria
+  com o alvo fora de alcance perdia o cronômetro pra um placeholder de 1
+  linha — mentia "Programa concluído" pro relógio, silenciava o alarme e
+  desabilitava "Cheguei" sem avisar, no meio de uma brassagem com etapas
+  já confirmadas. Agora o último cronograma alcançável (`timer.lastRows`)
+  viaja dentro do próprio objeto persistido em `localStorage`
+  (`TIMER_KEY`), e `state.rows` passa a refletir sempre o mesmo valor que
+  o cronômetro está de fato usando.
+- **V2** — o agrupamento de patamares (`samePlateau`) comparava a
+  temperatura já DEPOIS de descontar a perda térmica em espera (T3) com
+  o valor da linha anterior, também já descontado — com o parâmetro
+  ligado, dois patamares diferentes podiam coincidir por acaso e se
+  fundir. Agora compara o valor DECLARADO pelo passo (antes da perda),
+  não o final.
+- **V3** — o tooltip de "tempo real do patamar", com a perda térmica
+  ligada, dizia a mostura "ficar começando" numa temperatura sem nunca
+  dizer onde ela termina — o número que decide se o patamar ainda está
+  na faixa da enzima. Agora diz "cai de X°C para Y°C".
+- **W1** — a guarda de `annotateRealPlateauTimes` usava `Math.abs`, uma
+  diferença absoluta numa frase que só faz sentido num sentido; com
+  repouso zero, o "tempo real do patamar" era anunciado MENOR que o
+  digitado, o oposto do que o texto afirma. Guarda unilateral.
+- **W2** — o tooltip (`content: attr(data-tip)` escondido só por
+  `opacity: 0`) continuava inteiro na árvore de acessibilidade; leitor de
+  tela lia todas as dicas fechadas, embutidas no meio da escada — até 3x
+  o texto que a tela mostra. Trocado por `visibility: hidden`.
+- **W3** — a escada é uma tabela (`role="table"`) sem nenhum
+  `columnheader`; leitor de tela lia os números pelados, sem dizer a que
+  coluna pertencem — pior na célula "52° 100°", a distinção central do
+  app inteiro (mostura × panela de fervura), hoje resolvida só pela cor.
+  `aria-label` por célula em cada uma das três colunas da escada.
+- **W4 (perda de dado)** — apagar um campo numérico pra redigitá-lo (o
+  jeito normal de trocar um valor) jogava o padrão de fábrica pro
+  `state.params`, não o valor anterior — e já gravava isso no
+  `localStorage` antes do próximo dígito. Campo vazio não escreve mais
+  nada; o `blur` repõe o último valor bom.
+- **W5** — regressão da própria v1.11.4: subir a fonte dos campos pra
+  16px (zoom do iOS) fez um valor de 5 caracteres com meio litro (ex.:
+  "199,5") não caber mais na largura fixa de 4.4rem. Subida pra 5rem.
+- **W6 (viabilidade, aberto desde a 3ª leitura)** — a pseudo-decocção
+  sempre recusou um alvo fisicamente impossível; os sete métodos de
+  decocção real não tinham nada equivalente: um retorno que pediria a
+  mostura esfriar sozinha, ou mais calor do que a própria panela de
+  fervura tem, era aceito em silêncio — o grampo
+  `Math.max(0, Math.min(1, …))` da fração da puxada escondia o sintoma.
+  `runSteps` agora detecta a violação (alvo fora de `]t1, tb[`) e
+  reaproveita o mesmo painel "Alvo da mistura fora do alcance" que a
+  pseudo já usa, apontando o passo responsável e a faixa possível.
+
 ## [1.11.4] — 2026-09-03
 
 ### Corrigido

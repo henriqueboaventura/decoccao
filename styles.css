@@ -412,12 +412,20 @@ button, select, input {
   text-align: left;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.22);
   opacity: 0;
+  /* `opacity: 0` sozinho não tira o conteúdo da árvore de acessibilidade —
+     leitor de tela lia as 26 dicas fechadas embutidas na escada, sempre,
+     três vezes o texto que a tela mostra (achado W2, nona leitura).
+     `visibility` some da árvore e ainda deixa a transição de opacity/
+     transform funcionando, porque ela muda em degrau (não anima), não
+     precisa constar no `transition` abaixo. */
+  visibility: hidden;
   transform: translateY(-2px);
   pointer-events: none;
   transition: opacity 0.12s ease, transform 0.12s ease;
 }
 .hint:hover::after, .hint.is-open::after, .hint:focus-visible::after {
   opacity: 1;
+  visibility: visible;
   transform: translateY(0);
 }
 
@@ -445,7 +453,11 @@ button, select, input {
 }
 
 .field input[type="number"] {
-  width: 4.4rem;
+  /* 5rem, não 4.4rem: subir a fonte pra 16px (zoom do iOS, ver acima) fez
+     um valor de 5 caracteres com meio litro (ex.: "199,5") não caber mais
+     — a área visível de 68px cortava a partir de 75px pedidos (achado W5,
+     nona leitura). */
+  width: 5rem;
   background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: var(--radius);

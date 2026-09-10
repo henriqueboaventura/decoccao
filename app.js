@@ -86,7 +86,7 @@
   // tempo pra avançar), destaque de etapa antes de começar (activeIndex só
   // existe depois do 1º "Iniciar"), e o plano mudando sob o relógio (editar
   // parâmetros nunca pula etapa, já que a etapa ativa não depende do plano).
-  let timer = { running: false, startEpoch: null, accumulatedMs: 0, actualStepEndMin: [], alarm: defaultAlarmState() };
+  let timer = { running: false, startEpoch: null, accumulatedMs: 0, actualStepEndMin: [], alarm: defaultAlarmState(), lastRows: null };
   let chartGeom = null;
   let hoverT = null;
   let lastClientX = 0;
@@ -172,8 +172,15 @@
           // Idem: sem isso, uma etapa já vencida antes de um reload tocava
           // o alarme de novo assim que a página carregasse (achado P3c).
           alarm: stored.alarm && typeof stored.alarm === "object" ? stored.alarm : defaultAlarmState(),
+          // Último cronograma ALCANÇÁVEL, pra sobreviver a um reload com o
+          // alvo atual fora de alcance — sem isso, um F5 no meio de uma
+          // pseudo-decocção com o alvo já inalcançável perdia o cronômetro
+          // pra um placeholder de 1 linha, que mentia "Programa concluído"
+          // pro relógio, pro alarme e pro leitor de tela (achado V1, nona
+          // leitura). Ver uso em renderResults().
+          lastRows: Array.isArray(stored.lastRows) ? stored.lastRows : null,
         }
-      : { running: false, startEpoch: null, accumulatedMs: 0, actualStepEndMin: [], alarm: defaultAlarmState() };
+      : { running: false, startEpoch: null, accumulatedMs: 0, actualStepEndMin: [], alarm: defaultAlarmState(), lastRows: null };
   }
 
   function saveTimer() {
@@ -523,9 +530,15 @@
     // (T3) desligada — ligada, a mostura esfria minuto a minuto durante
     // esse mesmo patamar (é o que o parâmetro faz), e o tooltip afirmava o
     // oposto do que a tela ao lado mostra (achado S2, sexta leitura).
+    //
+    // "fica começando a X°C" não fecha a frase, e nunca diz onde a
+    // mostura TERMINA — o número que decide se o patamar ainda está na
+    // faixa da enzima. `realPlateauEndMash` (calculado em
+    // annotateRealPlateauTimes) já tem essa resposta pronta (achado V3,
+    // nona leitura).
     const coolingOn = Number(state.params.mashCoolingRate) > 0;
     const holdText = coolingOn
-      ? `começando a ${fmtNum(r.mash)}°C, mas esfriando aos poucos por causa da perda térmica em espera (parâmetro ligado)`
+      ? `caindo de ${fmtNum(r.mash)}°C para ${fmtNum(r.realPlateauEndMash)}°C por causa da perda térmica em espera`
       : `parada a ${fmtNum(r.mash)}°C, sem nada mudando nela`;
     let text = `O tempo digitado neste campo (${fmtNum(r.duration)} min) é só o repouso desta etapa. ` +
       `Somando ${decoctionSteps} que vêm logo depois — enquanto a mostura principal fica ${holdText} —, o tempo REAL que a mostura passa nesse patamar é ${fmtNum(r.realPlateauMin)} min.`;
@@ -571,7 +584,15 @@
       input.value = state.params[p.key];
       input.addEventListener("input", () => {
         const v = parseFloat(input.value);
-        const clamped = Number.isFinite(v) ? Math.min(p.max, Math.max(p.min, v)) : p.default;
+        // Campo vazio (ou lixo) enquanto o usuário troca o número por
+        // outro — selecionar tudo e apagar antes de digitar de novo é o
+        // jeito normal de editar um campo. Cair no padrão de fábrica aqui
+        // trocava o valor por um que ninguém pediu e já GRAVAVA isso no
+        // localStorage antes do próximo dígito (achado W4, nona leitura).
+        // Não escreve nada enquanto o campo não tiver um número válido —
+        // o blur abaixo repõe o último valor bom na tela.
+        if (!Number.isFinite(v)) return;
+        const clamped = Math.min(p.max, Math.max(p.min, v));
         state.params[p.key] = clamped;
         persistCurrentParams();
         flashAutosave();
@@ -624,7 +645,14 @@
   function renderResults() {
     const method = getMethod(state.methodId);
     const rows = computeSchedule(method, state.params);
-    const unreachable = rows.pseudoUnreachable;
+    // A pseudo-decocção sempre recusou um alvo fisicamente impossível
+    // (rows.pseudoUnreachable) — os sete métodos de decocção REAL não
+    // tinham nada equivalente: um retorno de decocção que esfria a
+    // mostura, ou que pede mais calor do que a própria panela de fervura
+    // tem, passava batido, clampado em silêncio (achado W6, nona leitura,
+    // aberto desde a 3ª). rows.decoctionUnreachable (runSteps, methods.js)
+    // é a mesma ideia pros sete métodos — mesmo painel, texto próprio.
+    const unreachable = rows.pseudoUnreachable || rows.decoctionUnreachable;
 
     // V2 da especificação da pseudo-decocção: nem W1=0 nem W1=W chegam no
     // alvo pedido — a fórmula devolveria água negativa ou maior que o
@@ -638,6 +666,24 @@
     el.resultsNormal.hidden = !!unreachable;
     if (unreachable) {
       const u = unreachable;
+      if (u.stepLabel !== undefined) {
+        // Decocção real (W6): a condição é mais simples que a da pseudo —
+        // t1 < alvo < tb, sem nada pra resolver, os dois já vinham
+        // calculados na própria linha que o grampo apagava.
+        const tooHigh = u.target >= u.maxTarget;
+        el.pseudoUnreachableText.textContent =
+          `Com os parâmetros atuais, o retorno "${u.stepLabel}" pede ${fmtNum(u.target)}°C — ` +
+          `fisicamente só dá pra chegar entre ${fmtNum(u.minTarget)}°C (a mostura no instante da puxada; devolver decocção nunca esfria) ` +
+          `e ${fmtNum(u.maxTarget)}°C (a própria decocção fervendo; não volta mais quente que ela mesma). ` +
+          (tooHigh
+            ? `Baixe o alvo desse retorno para no máximo ${fmtNum(u.maxTarget)}°C, ou suba a temperatura de fervura da decocção.`
+            : `Suba o alvo desse retorno para pelo menos ${fmtNum(u.minTarget)}°C, ou considere puxar mais cedo (mostura mais fria na hora da puxada).`);
+        if (!state.pseudoUnreachableFocused) {
+          const details = document.querySelector(".advanced-settings");
+          if (details) details.open = true;
+          state.pseudoUnreachableFocused = true;
+        }
+      } else {
       const belowMin = u.target < u.minTarget;
       const fieldLabel = u.usingProtease ? "da rampa de protease" : "da rampa de β-amilase";
       const fieldId = u.usingProtease ? "p_proteaseTemp" : "p_betaTemp";
@@ -660,6 +706,7 @@
         const field = document.getElementById(fieldId);
         if (field) field.focus({ preventScroll: false });
         state.pseudoUnreachableFocused = true;
+      }
       }
     } else {
       state.pseudoUnreachableFocused = false;
@@ -718,7 +765,7 @@
             : "Este método não puxa decocção."
         );
       }
-      state.rows = rows;
+      timer.lastRows = rows;
     }
     // Quando inalcançável, `rows` é o placeholder de 1 linha só (ver
     // computeSchedule) — NÃO pode alimentar o cronômetro: activeStepIndex/
@@ -726,11 +773,19 @@
     // verdade, podem ser várias) contra esse "total" de 1, e o programa era
     // declarado concluído no meio da brassagem, com "Cheguei" desabilitado
     // e o botão principal oferecendo apagar o registro (achado S1, grave).
-    // O cronômetro continua operando sobre o ÚLTIMO cronograma alcançável
-    // (state.rows de um render anterior) até os parâmetros voltarem a
-    // fazer sentido — é o que está fisicamente na panela, o aviso é sobre
-    // os parâmetros, não sobre a brassagem em andamento.
-    const rowsForTimer = unreachable ? (state.rows || rows) : rows;
+    // O cronômetro continua operando sobre o ÚLTIMO cronograma alcançável.
+    // `timer.lastRows` (não só `state.rows`) porque `state.rows` some numa
+    // carga fria — reload com o alvo já fora de alcance não tem render
+    // anterior nesta sessão pra puxar de lá; `timer.lastRows` sobrevive
+    // porque viaja dentro do próprio objeto persistido em TIMER_KEY (achado
+    // V1, nona leitura).
+    const rowsForTimer = unreachable ? (state.rows || timer.lastRows || rows) : rows;
+    // Atribuição incondicional (não só no ramo alcançável): mantém
+    // `state.rows` sempre igual ao que o cronômetro está de fato usando —
+    // "Cheguei" (state.rows || []) e tickTimer() (state.rows.length) liam
+    // esse campo direto, e ficavam tão inertes quanto o resto quando ele
+    // ficava undefined no primeiro render de uma carga fria inalcançável.
+    state.rows = rowsForTimer;
 
     const activeIndex = activeStepIndex(rowsForTimer.length);
     const finished = activeIndex >= rowsForTimer.length && rowsForTimer.length > 0;
@@ -913,6 +968,11 @@
       const time = document.createElement("div");
       time.className = "ladder-time";
       time.setAttribute("role", "cell");
+      // A escada é uma tabela sem nenhum columnheader (role="table" com só
+      // row/rowheader/cell) — sem aria-label por célula, um leitor de tela
+      // lê o número pelado, sem dizer a que coluna ele pertence (achado
+      // W3, nona leitura).
+      time.setAttribute("aria-label", `Duração ${fmtNum(r.duration)} minutos`);
       time.innerHTML = `<strong>${fmtNum(r.duration)}</strong> min`;
 
       const temp = document.createElement("div");
@@ -925,6 +985,12 @@
         ? `<span class="temp-pill temp-pill--boil">${fmtNum(r.displayBoil)}°</span>`
         : `<span class="temp-pill temp-pill--empty">—</span>`;
       temp.innerHTML = mashPill + " " + boilPill;
+      // "52° 100°" pelado não diz qual pílula é qual — é a distinção
+      // central do app inteiro (mostura × panela de fervura da decocção),
+      // hoje só resolvida pela cor pra quem enxerga (achado W3).
+      const mashAriaLabel = r.mash !== null && r.mash !== undefined ? `mostura ${fmtNum(r.mash)}°C` : null;
+      const boilAriaLabel = r.displayBoil !== null && r.displayBoil !== undefined ? `panela de fervura ${fmtNum(r.displayBoil)}°C` : null;
+      temp.setAttribute("aria-label", [mashAriaLabel, boilAriaLabel].filter(Boolean).join(", ") || "sem temperatura");
 
       const volume = document.createElement("div");
       volume.className = "ladder-volume";
@@ -944,6 +1010,7 @@
         // absurda continuava na mesma cor apagada de sempre (achado P8a).
         if (isAlarm) small.classList.add("is-alarm");
         small.textContent = `${fmtNum(r.decoctionFraction * 100)}% do volume`;
+        volume.setAttribute("aria-label", `Puxar ${fmtNum(r.decoctionVolumeL)} litros, ${fmtNum(r.decoctionFraction * 100)} por cento do volume`);
         volume.appendChild(pill);
         volume.appendChild(hint);
         volume.appendChild(small);
@@ -962,6 +1029,7 @@
           `Essa parte é ${fmtNum((r.returnVolumeL / pullRow.decoctionVolumeL) * 100)}% do total puxado.`
         );
         hint.classList.add("hint--volume");
+        volume.setAttribute("aria-label", `Devolver ${fmtNum(r.returnVolumeL)} litros`);
         volume.appendChild(pill);
         volume.appendChild(hint);
       } else if (r.pseudoParcelaW1 !== undefined) {
@@ -984,6 +1052,7 @@
         if (isAlarm) small.classList.add("is-alarm");
         else if (severity === "warn") small.classList.add("is-warn");
         small.textContent = `${fmtNum(r.pseudoEspessura)} L/kg`;
+        volume.setAttribute("aria-label", `1ª parcela: ${fmtNum(r.pseudoParcelaG1)} quilos de malte, ${fmtNum(r.pseudoParcelaW1)} litros de água, espessura ${fmtNum(r.pseudoEspessura)} litros por quilo`);
         volume.appendChild(pill);
         volume.appendChild(hint);
         volume.appendChild(small);
@@ -1000,6 +1069,7 @@
         );
         hint.classList.add("hint--volume");
         if (t1Hot) hint.classList.add("hint--alarm");
+        volume.setAttribute("aria-label", `Adicionar ${fmtNum(r.pseudoWaterAddL)} litros de água a ${fmtNum(r.pseudoWaterAddTemp)} graus`);
         volume.appendChild(pill);
         volume.appendChild(hint);
       } else if (r.pseudoMaltAddKg !== undefined) {
@@ -1011,6 +1081,7 @@
           "temperatura de fervura até uma faixa segura. É ele que traz as enzimas de conversão do resto do lote, ainda intactas."
         );
         hint.classList.add("hint--volume");
+        volume.setAttribute("aria-label", `Adicionar ${fmtNum(r.pseudoMaltAddKg)} quilos de malte seco`);
         volume.appendChild(pill);
         volume.appendChild(hint);
       }
@@ -1542,7 +1613,7 @@
   });
 
   function doResetTimer() {
-    timer = { running: false, startEpoch: null, accumulatedMs: 0, actualStepEndMin: [], alarm: defaultAlarmState() };
+    timer = { running: false, startEpoch: null, accumulatedMs: 0, actualStepEndMin: [], alarm: defaultAlarmState(), lastRows: null };
     releaseWakeLock();
     saveTimer();
     renderResults();
