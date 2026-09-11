@@ -14,9 +14,11 @@
 </head>
 <body>
 
+<a class="skip-link" href="#paramsForm">Pular pra configurações</a>
+
 <header class="app-header">
   <div class="brand">
-    <span class="brand__mark">Deco<span>c</span>ção</span>
+    <h1 class="brand__mark">Deco<span>c</span>ção</h1>
     <span class="brand__tag">Programas de mostura</span>
     <button class="theme-toggle" id="themeToggle" type="button" aria-label="Alternar tema"></button>
   </div>
@@ -27,7 +29,8 @@
 </header>
 
 <main class="layout" id="methodPanel" role="tabpanel" aria-label="Programa calculado para o método selecionado">
-  <section class="panel params-panel" aria-label="Parâmetros do programa">
+  <section class="panel params-panel" aria-labelledby="paramsHeading">
+    <h2 class="sr-only" id="paramsHeading">Parâmetros do programa</h2>
     <form id="paramsForm"></form>
     <div class="toolbar">
       <div class="select-line">
@@ -52,7 +55,8 @@
     </div>
   </section>
 
-  <section class="results-panel" aria-label="Programa calculado">
+  <section class="results-panel" aria-labelledby="resultsHeading">
+    <h2 class="sr-only" id="resultsHeading">Programa calculado</h2>
     <div class="panel pseudo-unreachable" id="pseudoUnreachable" role="alert" hidden>
       <p class="pseudo-unreachable__title" id="pseudoUnreachableTitle">Alvo da mistura fora do alcance</p>
       <p id="pseudoUnreachableText"></p>
@@ -82,6 +86,7 @@
         <span>Etapas: <strong id="stepCount">0</strong></span>
         <span id="mashVolumeWrap">Volume da mostura: <strong id="mashVolume">–</strong></span>
         <span id="maxPullWrap"><span id="maxPullLabel">Maior puxada:</span> <strong id="maxPull">–</strong></span>
+        <span id="thermalLoadWrap" hidden>Carga térmica: <strong id="thermalLoad">–</strong></span>
       </div>
     </div>
 
@@ -97,18 +102,18 @@
     </div>
 
     <div class="panel schedule-panel">
-      <div class="schedule-title" id="scheduleTitle">Passo a passo do programa</div>
+      <h2 class="schedule-title" id="scheduleTitle">Passo a passo do programa</h2>
       <div class="ladder" id="ladder" role="table" aria-labelledby="scheduleTitle"></div>
     </div>
     </div>
   </section>
 </main>
 
-<p class="footer-note">Desenvolvido por Henrique Boaventura e Fábio Koerich · parte do <a href="https://www.brassagemforte.com.br" target="_blank" rel="noopener">Brassagem Forte</a> · <span id="footerVersion"></span></p>
+<p class="footer-note"><a href="sobre.html">Por que decocção?</a> · Desenvolvido por Henrique Boaventura e Fábio Koerich · parte do <a href="https://www.brassagemforte.com.br" target="_blank" rel="noopener">Brassagem Forte</a> · <span id="footerVersion"></span></p>
 
-<dialog class="modal" id="saveModal">
+<dialog class="modal" id="saveModal" aria-labelledby="saveModalTitle">
   <div class="modal__body">
-    <p class="modal__title">Salvar predefinição</p>
+    <p class="modal__title" id="saveModalTitle">Salvar predefinição</p>
     <input type="text" id="presetNameInput" placeholder="Nome da predefinição" maxlength="60" />
     <div class="modal__actions">
       <button class="btn btn--ghost" id="cancelSaveBtn" type="button">Cancelar</button>
@@ -117,9 +122,9 @@
   </div>
 </dialog>
 
-<dialog class="modal" id="deleteModal">
+<dialog class="modal" id="deleteModal" aria-labelledby="deleteModalTitle">
   <div class="modal__body">
-    <p class="modal__title">Excluir predefinição</p>
+    <p class="modal__title" id="deleteModalTitle">Excluir predefinição</p>
     <p class="modal__text" id="deleteModalText"></p>
     <div class="modal__actions">
       <button class="btn btn--ghost" id="cancelDeleteBtn" type="button">Cancelar</button>
@@ -128,9 +133,9 @@
   </div>
 </dialog>
 
-<dialog class="modal" id="resetModal">
+<dialog class="modal" id="resetModal" aria-labelledby="resetModalTitle">
   <div class="modal__body">
-    <p class="modal__title">Resetar cronômetro</p>
+    <p class="modal__title" id="resetModalTitle">Resetar cronômetro</p>
     <p class="modal__text">Isso apaga o registro de todas as etapas já confirmadas nesta brassagem (horário real de cada uma) e zera o relógio. Não pode ser desfeito.</p>
     <div class="modal__actions">
       <button class="btn btn--ghost" id="cancelResetBtn" type="button">Cancelar</button>

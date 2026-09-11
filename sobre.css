@@ -1,0 +1,95 @@
+/* Página de leitura — separada do layout de trabalho do app (grid de
+   parâmetros/gráfico/escada) de propósito, pra não competir por espaço com
+   a calculadora. Reaproveita os tokens e classes de styles.css (.panel,
+   .brand*, .theme-toggle, .footer-note) — só o que é específico de artigo
+   (largura de leitura, tipografia de texto corrido, listas) mora aqui. */
+
+.brand__link {
+  display: inline-flex;
+  text-decoration: none;
+}
+.brand__link .brand__mark { color: var(--text); }
+.brand__link:hover .brand__mark { color: var(--copper); }
+
+.sobre {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 2rem 1rem 3rem;
+}
+
+.sobre h1 {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.7rem;
+  letter-spacing: 0.01em;
+  color: var(--text);
+  margin: 0 0 0.9rem;
+}
+
+.sobre__lede {
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--text-dim);
+  margin: 0 0 1.6rem;
+}
+
+.sobre__section {
+  padding: 1.2rem 1.3rem;
+  margin-bottom: 1rem;
+}
+
+.sobre__section h2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: 0.01em;
+  color: var(--copper);
+  margin: 0 0 0.7rem;
+}
+
+.sobre__section p {
+  font-size: 0.9rem;
+  line-height: 1.65;
+  color: var(--text);
+  margin: 0 0 0.8rem;
+}
+.sobre__section p:last-child { margin-bottom: 0; }
+
+.sobre__section ul {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+.sobre__section li {
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--text);
+  margin-bottom: 0.7rem;
+}
+.sobre__section li:last-child { margin-bottom: 0; }
+.sobre__section li strong { color: var(--copper); }
+
+.sobre__sources {
+  list-style: none;
+  padding: 0;
+}
+.sobre__sources li {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  margin-bottom: 0.5rem;
+}
+.sobre__sources a { color: var(--text-dim); }
+.sobre__sources a:hover { color: var(--copper); }
+
+.sobre__back {
+  margin: 1.6rem 0 0;
+}
+.sobre__back a {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  text-decoration: none;
+}
+.sobre__back a:hover { color: var(--copper); }

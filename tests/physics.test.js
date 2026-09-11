@@ -132,15 +132,17 @@ describe('conservação de energia com puxada devolvida em partes (evita superes
 });
 
 describe('Boaventura (T6, Raio-X/Segunda Leitura): patamares reais batem com a correção publicada', () => {
-  test('35min reais a 62°C (declarado, sem etapa escondida) e ~39,5min reais a 71°C (achado, além do declarado)', () => {
+  test('35min reais a 62°C (declarado, sem etapa escondida) e ~54,5min reais a 71°C (achado, além do declarado)', () => {
     // Antes da correção (padrões trocados, 15min/40min), o real dava 15min
     // a 62°C e 74,5min a 71°C — o inverso do que a literatura pede. Com os
     // padrões corrigidos (35min/5min), a rampa de maltose já É 35 reais
     // (patamar de uma etapa só, sem nada escondido depois — por isso não
     // ganha anotação de realPlateauMin, só o próprio "duration"); a de
-    // dextrinização declara 5min mas tem ~39,5min reais escondidos nela
+    // dextrinização declara 5min mas tem ~54,5min reais escondidos nela
     // (transferência + aquecimento + fervura da decocção, todos com a
-    // mostura parada a 71°C antes do retorno).
+    // mostura parada a 71°C antes do retorno). 54,5, não mais 39,5: a
+    // fervura da decocção subiu de 15 pra 30min ("Uma Decocção Só", nota
+    // externa, décima primeira leitura) — +15min de tempo real escondido.
     const method = D.getMethod('boaventura');
     const rows = D.computeSchedule(method, D.defaultParams(method));
     const rampaMaltose = rows.find((r) => r.label === 'Rampa de maltose');
@@ -150,7 +152,7 @@ describe('Boaventura (T6, Raio-X/Segunda Leitura): patamares reais batem com a c
     approxEqual(rampaMaltose.duration, 35, 0.5, 'tempo (declarado = real) a 62°C');
 
     assert.ok(rampaDextrinizacao.realPlateauMin !== undefined, 'rampa de dextrinização deveria ter tempo real anotado (tem etapas escondidas depois)');
-    approxEqual(rampaDextrinizacao.realPlateauMin, 39.5, 0.5, 'tempo real ALÉM do declarado, a 71°C');
+    approxEqual(rampaDextrinizacao.realPlateauMin, 54.5, 0.5, 'tempo real ALÉM do declarado, a 71°C');
 
     // a inversão do bug original: maltose real 15min / dextrinização real 74,5min
     assert.ok(Math.abs(rampaMaltose.duration - 15) > 5, 'tempo a 62°C perto demais do valor invertido do bug original (15min)');

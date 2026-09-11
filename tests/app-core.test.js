@@ -290,4 +290,31 @@ describe('nextAlarmState — repetição e teto do alarme (achado N1, 4ª leitur
     const result = C.nextAlarmState(C.defaultAlarmState(), { ...baseOpts, nowMin: null });
     assert.equal(result.fire, false);
   });
+
+  // Y8 (grave, décima primeira leitura): a guarda de duração zero acima
+  // (Q13) só olha `targetTotalMin`, e só protege a ETAPA 0 — uma etapa no
+  // MEIO do programa com duração zero (rampa zerada, Mash Out sem
+  // repouso) herda o mesmo horário-alvo da etapa anterior, então no
+  // instante em que ela vira ativa `nowMin >= targetTotalMin` já é
+  // verdade e o alarme dispara na hora, sem o usuário ter esperado nada.
+  // Reproduzido com o número exato do achado (Dupla Tradicional, etapa 8
+  // "Rampa de sacarificação" com 0min, confirmada em t=84min).
+  test('Y8: etapa ativa com duração zero, no meio do programa, não dispara no instante em que vira ativa', () => {
+    const result = C.nextAlarmState(C.defaultAlarmState(), {
+      ...baseOpts, activeIndex: 8, targetTotalMin: 84, activeDuration: 0, nowMin: 84,
+    });
+    assert.equal(result.fire, false, 'etapa sem duração não tem o que esperar — não deveria disparar');
+  });
+
+  test('Y8: mesma etapa, mas com duração > 0, continua dispando normalmente no previsto', () => {
+    const result = C.nextAlarmState(C.defaultAlarmState(), {
+      ...baseOpts, activeIndex: 8, targetTotalMin: 84, activeDuration: 5, nowMin: 84,
+    });
+    assert.equal(result.fire, true, 'com duração de verdade, o comportamento normal (Q13/N1) continua valendo');
+  });
+
+  test('Y8: activeDuration ausente (chamador antigo) não quebra o comportamento existente', () => {
+    const result = C.nextAlarmState(C.defaultAlarmState(), { ...baseOpts, nowMin: 138 });
+    assert.equal(result.fire, true, 'sem activeDuration no opts, a guarda nova não deveria interferir');
+  });
 });

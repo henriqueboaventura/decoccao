@@ -7,18 +7,29 @@ const G = {
   GRAIN_WEIGHT: { key: "grainWeight", label: "Massa de malte moído", unit: "kg", group: "Insumos", min: 0.1, max: 100, step: 0.1 },
   MASH_IN_TEMP: { key: "mashInTemp", label: "Temp. Mash In", unit: "°C", group: "Geral", min: 20, max: 80, step: 1 },
   HEATING_RATE: { key: "heatingRate", label: "Taxa de aquecimento", unit: "°C/min", group: "Geral", min: 0.5, max: 5, step: 0.1 },
-  // Padrão 0 = a mostura principal não perde temperatura enquanto a
-  // decocção é processada à parte (tina com aquecimento que mantém a
-  // temperatura, ou processo rápido o bastante pra perda ser desprezível).
-  // Quem brassa em tina sem aquecimento pode ligar isso pra puxar um
-  // volume de decocção maior, que compense a perda real (T3).
-  MASH_COOLING_RATE: { key: "mashCoolingRate", label: "Perda térmica enquanto a decocção está fora", unit: "°C/min", group: "Geral", min: 0, max: 1, step: 0.05, default: 0 },
+  // Padrão 0 = a mostura principal não perde temperatura enquanto está
+  // parada (tina com aquecimento que mantém a temperatura, ou processo
+  // rápido o bastante pra perda ser desprezível). Quem brassa em tina sem
+  // aquecimento pode ligar isso — conta em QUALQUER etapa parada (repouso
+  // declarado ou decocção fora), não só durante a decocção (achado Y4,
+  // décima primeira leitura: é a mesma tina, no mesmo estado parado, nos
+  // dois casos). Teto de 0,3 °C/min: acima disso não existe equipamento
+  // de brassagem real — o campo passa a ser autodocumentado, e fecha por
+  // baixo os 155/700 casos em que a mostura chegava a temperatura
+  // negativa na tela sem esse limite (achado Y1, grave).
+  MASH_COOLING_RATE: { key: "mashCoolingRate", label: "Perda térmica da mostura em espera", unit: "°C/min", group: "Geral", min: 0, max: 0.3, step: 0.01, default: 0 },
   TRANSFER_TIME: { key: "transferTime", label: "Tempo de transferência", unit: "min", group: "Geral", min: 0, max: 30, step: 1 },
   SACC_TEMP: { key: "decoccao1SaccTemp", label: "Temp. de sacarificação da decocção", unit: "°C", group: "Decocções", min: 40, max: 90, step: 1 },
   SACC_TIME: { key: "saccTime", label: "Tempo de sacarificação da decocção", unit: "min", group: "Decocções", min: 0, max: 60, step: 1 },
   FERVURA_TEMP: { key: "fervuraTemp", label: "Temp. de fervura da porção decoctada", unit: "°C", group: "Decocções", min: 90, max: 105, step: 1 },
   MASHOUT_TEMP: { key: "mashOutTemp", label: "Temp. Mash Out", unit: "°C", group: "Geral", min: 70, max: 85, step: 1 },
   MASHOUT_TIME: { key: "mashOutTime", label: "Tempo de Mash Out", unit: "min", group: "Geral", min: 0, max: 60, step: 1 },
+  // Padrão 0 = sem evaporação — números idênticos aos de antes desta
+  // versão pra quem não mexer. Ligado, a fração de tempo em que a panela
+  // fica de fato fervendo (boil === fervuraTemp) some do volume que
+  // retorna pra mostura — a mesma física que a pseudo-decocção já
+  // aplicava só pra ela (achado Y5, décima primeira leitura).
+  EVAP_RATE: { key: "evapRatePctPerHour", label: "Evaporação da fervura da decocção", unit: "%/h", group: "Decocções", min: 0, max: 20, step: 1, default: 0 },
 };
 
 function num(v, d = 0) {
@@ -155,23 +166,48 @@ function runSteps(steps, params) {
   // T3: por padrão a mostura principal não esfria em espera (tina com
   // aquecimento, ou perda desprezível) — `mashCoolingRate` 0 é o default
   // do parâmetro, então tudo abaixo vira no-op e o resultado é idêntico
-  // ao motor antes desta mudança. Quando > 0, a tina esfria durante as
-  // etapas "paradas" (mash: sameMash) enquanto a decocção é processada à
-  // parte — desde a própria puxada (transferência) até o retorno. Um
-  // acumulador SEPARADO do valor de `mash` exibido (`idleCoolingLoss`)
-  // guarda quanto já esfriou desde a puxada, sem se confundir com trocas
-  // de patamar entre adições parciais (isso reintroduziria o bug do C1:
-  // usar a temperatura JÁ MISTURADA de uma adição anterior como T1 da
-  // próxima superestimaria o volume). Só reseta numa puxada NOVA.
+  // ao motor antes desta mudança. Quando > 0, TODA etapa "parada" (mash:
+  // sameMash, sem fonte de calor) perde temperatura nessa taxa — não só
+  // as etapas dentro da janela de uma decocção específica (achado Y4,
+  // décima primeira leitura: antes disso, a mesma tina no mesmo estado
+  // parado era tratada como isolada num repouso declarado e vazada
+  // durante uma decocção — fisicamente é a mesma física nos dois casos).
+  // Um acumulador SEPARADO do valor de `mash` exibido (`idleCoolingLoss`)
+  // guarda quanto já esfriou desde a ÚLTIMA puxada — ou desde o último
+  // retorno, pra adições parciais (achado Y2, ver abaixo) — sem se
+  // confundir com trocas de patamar entre adições (isso reintroduziria o
+  // bug do C1: usar a temperatura JÁ MISTURADA de uma adição anterior
+  // como T1 da próxima superestimaria o volume).
   const coolingRate = num(params.mashCoolingRate, 0);
+  const evapRate = num(params.evapRatePctPerHour, 0);
 
   const rows = [];
   let prev = { mash: null, boil: null, declaredMash: null };
   let totalMin = 0;
   let pullIndex = null;
   let pullOriginalMash = null;
-  let idleActive = false;
+  // Só usada agora pra saber quando a panela está com decocção dentro —
+  // liga em pullsDecoction, desliga no retorno FINAL — pra acumular o
+  // tempo de fervura da evaporação (Y5, abaixo). O cooling em si não
+  // depende mais disso (Y4).
+  let pullOpen = false;
   let idleCoolingLoss = 0;
+  // Y2 (décima primeira leitura): quando uma puxada volta em mais de uma
+  // adição parcial, a 2ª adição em diante não parte da temperatura
+  // ORIGINAL da puxada — parte de onde a adição anterior deixou a tina.
+  // A checagem de viabilidade (t1, abaixo) comparava toda adição contra
+  // `pullOriginalMash`, e um alvo menor que o que a 1ª adição já
+  // alcançou (mas ainda maior que a puxada original) passava batido,
+  // pedindo um volume negativo na 2ª adição pra "desfazer" o que a 1ª já
+  // esquentou. `lastReturnMash`/`idleCoolingLossAtLastReturn` guardam o
+  // piso certo pra CADA retorno — a mesma referência que o passe de
+  // adições parciais mais abaixo já usa pra calcular `returnVolumeL`.
+  let lastReturnMash = null;
+  let idleCoolingLossAtLastReturn = 0;
+  // Y5: minutos em que a panela fica de fato em fervura plena (boil ===
+  // fervuraTemp) enquanto a puxada atual segue aberta — usado só pra
+  // saber quanto evaporou até o retorno.
+  let boilHoldMin = 0;
   // W6 (nona leitura, aberto desde a 3ª): a pseudo-decocção recusa um alvo
   // fisicamente impossível — os sete métodos de decocção REAL não tinham
   // nada disso. Guarda só a PRIMEIRA violação encontrada (a que o
@@ -194,15 +230,52 @@ function runSteps(steps, params) {
     // falsa de um patamar constante — de uma vez, sem depender da taxa.
     const declaredMash = step.mash === sameMash ? prev.declaredMash : mash;
     const boil = step.boil ? step.boil(params, prev) : null;
+    const tb = num(params.fervuraTemp);
+
+    // Y3 (décima primeira leitura): a mesma condição de viabilidade do
+    // W6, agora aplicada ao AQUECIMENTO DA PRÓPRIA PANELA — sem isso, um
+    // alvo de sacarificação/fervura MENOR que a temperatura atual da
+    // panela dava duração negativa (grampeada em 0 pelo `Math.max` acima)
+    // e a panela "esfriava sozinha, de graça, em 0 minuto". Só se aplica
+    // a etapas de aquecimento de verdade (`mash: sameMash`, `boil`
+    // explícito, fora de puxada/retorno — nesses dois o campo `boil`
+    // muda de significado, não é uma alegação de aquecimento).
+    if (!decoctionUnreachable && step.mash === sameMash && boil !== null && prev.boil !== null
+        && !step.pullsDecoction && !step.returnsDecoction && boil < prev.boil) {
+      decoctionUnreachable = { stepLabel: step.label, target: boil, minTarget: prev.boil, maxTarget: tb, targetKey: step.targetKey };
+    }
 
     if (step.pullsDecoction) {
-      idleActive = true;
+      pullOpen = true;
       idleCoolingLoss = 0;
+      lastReturnMash = null;
+      idleCoolingLossAtLastReturn = 0;
+      boilHoldMin = 0;
     }
-    if (idleActive && coolingRate > 0 && step.mash === sameMash) {
-      const loss = coolingRate * duration;
-      idleCoolingLoss += loss;
-      mash -= loss;
+    // Y1 (décima primeira leitura, grave): sem piso, uma taxa alta numa
+    // janela de decocção longa levava `mash` abaixo de zero — a mostura
+    // "esfriava" pra -42,5°C na tela, fisicamente impossível. O teto do
+    // campo (0,3°C/min, acima) já torna isso quase inatingível na
+    // prática; o piso aqui é a rede de segurança pro que sobra e pra
+    // valores importados de fora (JSON antigo, achado C1/N1). Acumula a
+    // perda REALMENTE aplicada (já com o piso), não a bruta — senão o T1
+    // corrigido (mais abaixo) descolaria do valor de `mash` de verdade.
+    if (coolingRate > 0 && step.mash === sameMash) {
+      const rawMash = mash;
+      mash = Math.max(0, mash - coolingRate * duration);
+      idleCoolingLoss += rawMash - mash;
+    }
+    // Y5: soma o tempo em fervura PLENA enquanto a puxada atual está
+    // aberta — é a duração que entra na evaporação no momento do retorno.
+    // Precisa checar `prev.boil` também, não só `boil`: a etapa de
+    // "Aquecimento até a fervura" também termina com boil===tb (é o
+    // valor de CHEGADA dela), mas ela está RAMPEANDO até lá, não parada
+    // fervendo — só conta quando a panela já estava em tb ANTES desta
+    // etapa começar (achado análogo ao Y3, pego na própria implementação
+    // do Y5 antes de publicar).
+    if (pullOpen && boil !== null && Math.abs(boil - tb) < 1e-9
+        && prev.boil !== null && Math.abs(prev.boil - tb) < 1e-9) {
+      boilHoldMin += duration;
     }
 
     totalMin += duration;
@@ -239,29 +312,69 @@ function runSteps(steps, params) {
       // T1 é sempre a temp. da mostura no momento EXATO da puxada, menos
       // a perda térmica acumulada desde então (T3) — nunca a temperatura
       // intermediária de uma adição anterior, ver comentário acima (C1).
+      // A fração/volume abaixo é CUMULATIVA a partir da puxada original —
+      // validada byte a byte contra um modelo físico independente
+      // (balanço de energia refeito do zero, décima primeira leitura,
+      // §2), inclusive nas adições parciais da Dupla Aprimorada. Só a
+      // CHECAGEM DE VIABILIDADE (t1Local, abaixo) usa uma referência
+      // diferente — são perguntas diferentes.
       const t1 = pullOriginalMash - idleCoolingLoss;
-      const tb = num(params.fervuraTemp);
       const denom = tb - t1;
+      // Y2 (décima primeira leitura): a checagem de viabilidade comparava
+      // TODA adição parcial contra a temperatura da puxada ORIGINAL. Mas
+      // a 2ª adição em diante não parte dali — parte de onde a adição
+      // ANTERIOR deixou a tina. Um alvo menor que o que a 1ª adição já
+      // alcançou (mas ainda maior que a puxada original) passava batido,
+      // pedindo um volume negativo na 2ª adição pra "desfazer" o que a 1ª
+      // já esquentou. `t1Local` é o piso certo pra ESTE retorno
+      // específico — a mesma referência que o passe de adições parciais
+      // mais abaixo já usa pra calcular `returnVolumeL`.
+      const baseMash = lastReturnMash !== null ? lastReturnMash : pullOriginalMash;
+      const t1Local = baseMash - (idleCoolingLoss - idleCoolingLossAtLastReturn);
+      const denomLocal = tb - t1Local;
       // Condição de viabilidade: o alvo do retorno só é alcançável se ficar
-      // ESTRITAMENTE entre a temperatura da mostura no instante da puxada
-      // (t1 — devolver decocção nunca esfria, só esquenta) e a temperatura
-      // da própria decocção fervendo (tb — não devolve mais quente que ela
-      // mesma). Fora dessa faixa, o grampo `Math.max(0, Math.min(1, …))`
-      // logo abaixo aceitava qualquer valor como se fosse um ponto normal
-      // de 0-100%, sem nunca avisar (achado W6).
-      if (!decoctionUnreachable && (denom <= 0 || mash <= t1 || mash >= tb)) {
-        decoctionUnreachable = { stepLabel: step.label, target: mash, minTarget: t1, maxTarget: tb, targetKey: step.targetKey };
+      // ESTRITAMENTE entre a temperatura da mostura no instante em que
+      // ESTE retorno parte (t1Local — devolver decocção nunca esfria, só
+      // esquenta) e a temperatura da própria decocção fervendo (tb — não
+      // devolve mais quente que ela mesma). Fora dessa faixa, o grampo
+      // `Math.max(0, Math.min(1, …))` logo abaixo aceitava qualquer valor
+      // como se fosse um ponto normal de 0-100%, sem nunca avisar
+      // (achado W6). Limite ESTRITO (`<`/`>`, não `<=`/`>=`): exatamente
+      // em cima do piso, a fração dá 0 — pedir 0% de decocção é inútil,
+      // não impossível; exatamente no teto, a fração dá 1 — pedir 100% é
+      // extremo, não impossível. Os dois continuam matematicamente
+      // válidos (acham revisado ao vivo com a nona leitura, achado W6).
+      if (!decoctionUnreachable && (denomLocal <= 0 || mash < t1Local || mash > tb)) {
+        decoctionUnreachable = { stepLabel: step.label, target: mash, minTarget: t1Local, maxTarget: tb, targetKey: step.targetKey };
       }
       const fraction = denom > 0 ? Math.max(0, Math.min(1, (mash - t1) / denom)) : 0;
       const pullRow = rows[pullIndex];
       pullRow.decoctionFraction = fraction;
       pullRow.decoctionVolumeL = fraction * totalMashVolumeL(params);
+      // Y5: quanto do que foi puxado evapora até o retorno — não afeta o
+      // que foi PUXADO (decoctionVolumeL, acima — continua sendo o que de
+      // fato saiu da mostura), só o que VOLTA. Recalculado a cada retorno
+      // da mesma puxada; o último (que fecha o tempo total de fervura da
+      // panela) é quem vale, mesmo padrão de sobrescrita que
+      // decoctionFraction já usa. Padrão 0: evapFraction sempre 0, números
+      // idênticos aos de antes desta versão.
+      pullRow.evapFraction = Math.min(1, Math.max(0, (evapRate / 100) * (boilHoldMin / 60)));
+      pullRow.evaporatedL = pullRow.decoctionVolumeL * pullRow.evapFraction;
+      // "Uma Decocção Só" (nota externa, décima primeira leitura): minutos
+      // em fervura plena desta puxada — junto com `decoctionFraction`, dá
+      // a "carga térmica" de cada decocção (fração% × minutos), a métrica
+      // que mostra quanta mostura de fato passa pela fervura da panela.
+      // Mesmo padrão de sobrescrita: o último retorno (que fecha o tempo
+      // total de fervura) é quem vale.
+      pullRow.boilMin = boilHoldMin;
       pullRow.returnParts = (pullRow.returnParts || 0) + 1;
       row.returnsDecoction = true;
       row.isFinalReturn = isFinalReturn[idx];
       row.pullIndex = pullIndex;
       row.idleCoolingLossAtReturn = idleCoolingLoss;
-      if (isFinalReturn[idx]) idleActive = false;
+      lastReturnMash = mash;
+      idleCoolingLossAtLastReturn = idleCoolingLoss;
+      if (isFinalReturn[idx]) pullOpen = false;
     }
 
     prev = { mash, boil: boil !== null ? boil : prev.boil, declaredMash };
@@ -286,7 +399,9 @@ function runSteps(steps, params) {
     // não a perda total, que já está embutida no valor anterior.
     let tinaTemp = pullRow.pullOriginalMash - (returns[0].idleCoolingLossAtReturn || 0);
     let prevCoolingLoss = returns[0].idleCoolingLossAtReturn || 0;
-    let remainingL = pullRow.decoctionVolumeL;
+    // Y5: o que evapora nunca chega a "sobrar" pra última adição devolver —
+    // sai do total antes de qualquer parte ser distribuída.
+    let remainingL = pullRow.decoctionVolumeL - (pullRow.evaporatedL || 0);
     returns.forEach((r, i) => {
       if (i === returns.length - 1) {
         r.returnVolumeL = remainingL; // última adição: o que sobrou da puxada
@@ -346,15 +461,16 @@ function buildSimples({
     { ...G.MASHOUT_TIME, default: 10 },
     { ...G.HEATING_RATE, default: heatingRateDefault },
     { ...G.MASH_COOLING_RATE },
+    { ...G.EVAP_RATE },
   ];
 
   const steps = [
     { label: "Mash In", duration: () => 0, mash: (p) => p.mashInTemp },
     { label: rampaLabel, duration: (p) => p[rampaKey], mash: sameMash },
     { label: "Transferência Mostura → Fervura", duration: (p) => p.transferTime, mash: sameMash, boil: sameMash, pullsDecoction: true, restsForConversion: true },
-    { label: "Aquecimento até a sacarificação", duration: (p, prev) => (p.decoccao1SaccTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.decoccao1SaccTemp },
+    { label: "Aquecimento até a sacarificação", duration: (p, prev) => (p.decoccao1SaccTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.decoccao1SaccTemp, targetKey: "decoccao1SaccTemp" },
     { label: "Sacarificação da decocção", duration: (p) => p.saccTime, mash: sameMash, boil: sameBoil },
-    { label: "Aquecimento até a fervura", duration: (p, prev) => (p.fervuraTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.fervuraTemp },
+    { label: "Aquecimento até a fervura", duration: (p, prev) => (p.fervuraTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.fervuraTemp, targetKey: "fervuraTemp" },
     { label: "Decocção (fervura)", duration: (p) => p.decoction1Time, mash: sameMash, boil: sameBoil },
     { label: "Transferência Fervura → Mostura", duration: (p) => p.transferTime, mash: (p) => p.mashTemp2, boil: (p) => p.mashTemp2, returnsDecoction: true, targetKey: "mashTemp2" },
     { label: rampaSaccLabel, duration: (p) => p.rampaSaccTime, mash: sameMash, boil: sameBoil },
@@ -407,24 +523,25 @@ function buildDupla({
     { ...G.MASHOUT_TIME, default: 10 },
     { ...G.HEATING_RATE, default: 2 },
     { ...G.MASH_COOLING_RATE },
+    { ...G.EVAP_RATE },
   ];
 
   const steps = [
     { label: "Mash In", duration: () => 0, mash: (p) => p.mashInTemp },
     { label: rampaLabel, duration: (p) => p[rampaKey], mash: sameMash },
     { label: "Transferência Mostura → Fervura", duration: (p) => p.transferTime, mash: sameMash, boil: sameMash, pullsDecoction: true, restsForConversion: true },
-    { label: "Aquecimento da 1ª decocção (até a sacarificação)", duration: (p, prev) => (p.decoccao1SaccTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.decoccao1SaccTemp },
+    { label: "Aquecimento da 1ª decocção (até a sacarificação)", duration: (p, prev) => (p.decoccao1SaccTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.decoccao1SaccTemp, targetKey: "decoccao1SaccTemp" },
     { label: "Sacarificação da decocção", duration: (p) => p.saccTime, mash: sameMash, boil: sameBoil },
-    { label: "Aquecimento da 1ª decocção (até a fervura)", duration: (p, prev) => (p.fervuraTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.fervuraTemp },
+    { label: "Aquecimento da 1ª decocção (até a fervura)", duration: (p, prev) => (p.fervuraTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.fervuraTemp, targetKey: "fervuraTemp" },
     { label: "Primeira decocção", duration: (p) => p.decoction1Time, mash: sameMash, boil: sameBoil },
     { label: "Transferência Fervura → Mostura", duration: (p) => p.transferTime, mash: (p) => p.mashTemp2, boil: (p) => p.mashTemp2, returnsDecoction: true, targetKey: "mashTemp2" },
     { label: rampaSaccLabel, duration: (p) => p.rampaSaccTime, mash: sameMash, boil: sameBoil },
     { label: "Transferência Mostura → Fervura", duration: (p) => p.transferTime, mash: sameMash, boil: sameBoil, pullsDecoction: true, restsForConversion: secondDecoctionRests },
     ...(secondDecoctionRests ? [
-      { label: "Aquecimento da 2ª decocção (até a sacarificação)", duration: (p, prev) => (p.decoccao1SaccTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.decoccao1SaccTemp },
+      { label: "Aquecimento da 2ª decocção (até a sacarificação)", duration: (p, prev) => (p.decoccao1SaccTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.decoccao1SaccTemp, targetKey: "decoccao1SaccTemp" },
       { label: "Sacarificação da decocção", duration: (p) => p.saccTime, mash: sameMash, boil: sameBoil },
     ] : []),
-    { label: "Aquecimento da 2ª decocção (até a fervura)", duration: (p, prev) => (p.fervuraTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.fervuraTemp },
+    { label: "Aquecimento da 2ª decocção (até a fervura)", duration: (p, prev) => (p.fervuraTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.fervuraTemp, targetKey: "fervuraTemp" },
     { label: "Segunda decocção", duration: (p) => p.decoction2Time, mash: sameMash, boil: sameBoil },
     { label: "Transferência Fervura → Mostura", duration: (p) => p.transferTime, mash: (p) => p.mashOutTemp, boil: (p) => p.mashOutTemp, returnsDecoction: true, targetKey: "mashOutTemp" },
     { label: "Mash Out", duration: (p) => p.mashOutTime, mash: sameMash },
@@ -457,22 +574,23 @@ function buildDuplaAprimorada() {
     { ...G.MASHOUT_TIME, default: 10 },
     { ...G.HEATING_RATE, default: 2 },
     { ...G.MASH_COOLING_RATE },
+    { ...G.EVAP_RATE },
   ];
 
   const steps = [
     { label: "Mash In", duration: () => 0, mash: (p) => p.acidRestTemp },
     { label: "Rampa ácida", duration: (p) => p.acidRestTime, mash: sameMash },
     { label: "Transferência da 1ª decocção Mostura → Fervura", duration: (p) => p.transferTime, mash: sameMash, boil: sameMash, pullsDecoction: true, restsForConversion: true },
-    { label: "Aquecimento da decocção (até a sacarificação)", duration: (p, prev) => (p.decoccao1SaccTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.decoccao1SaccTemp },
+    { label: "Aquecimento da decocção (até a sacarificação)", duration: (p, prev) => (p.decoccao1SaccTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.decoccao1SaccTemp, targetKey: "decoccao1SaccTemp" },
     { label: "Sacarificação da decocção", duration: (p) => p.saccTime, mash: sameMash, boil: sameBoil },
-    { label: "Aquecimento da decocção (até a fervura)", duration: (p, prev) => (p.fervuraTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.fervuraTemp },
+    { label: "Aquecimento da decocção (até a fervura)", duration: (p, prev) => (p.fervuraTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.fervuraTemp, targetKey: "fervuraTemp" },
     { label: "Fervura da 1ª decocção", duration: (p) => p.decoction1Time, mash: sameMash, boil: sameBoil },
     { label: "1ª adição (Fervura → Mostura)", duration: (p) => p.transferTime, mash: (p) => p.proteinRestTemp, boil: (p) => p.proteinRestTemp, returnsDecoction: true, targetKey: "proteinRestTemp" },
     { label: "Rampa de proteína", duration: (p) => p.proteinRestTime, mash: sameMash, boil: sameBoil },
     { label: "2ª adição (Fervura → Mostura)", duration: (p) => p.transferTime, mash: (p) => p.saccRestTemp, boil: (p) => p.saccRestTemp, returnsDecoction: true, targetKey: "saccRestTemp" },
     { label: "Rampa de sacarificação", duration: (p) => p.saccRestTime, mash: sameMash, boil: sameBoil },
     { label: "Transferência da 2ª decocção Mostura → Fervura", duration: (p) => p.transferTime, mash: sameMash, boil: sameBoil, pullsDecoction: true, restsForConversion: false },
-    { label: "Aquecimento da 2ª decocção", duration: (p, prev) => (p.fervuraTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.fervuraTemp },
+    { label: "Aquecimento da 2ª decocção", duration: (p, prev) => (p.fervuraTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.fervuraTemp, targetKey: "fervuraTemp" },
     { label: "Fervura da 2ª decocção", duration: (p) => p.decoction2Time, mash: sameMash, boil: sameBoil },
     { label: "Transferência Fervura → Mostura", duration: (p) => p.transferTime, mash: (p) => p.mashOutTemp, boil: (p) => p.mashOutTemp, returnsDecoction: true, targetKey: "mashOutTemp" },
     { label: "Mash Out", duration: (p) => p.mashOutTime, mash: sameMash },
@@ -503,27 +621,28 @@ function buildTripla() {
     { ...G.MASHOUT_TIME, default: 10 },
     { ...G.HEATING_RATE, default: 3 },
     { ...G.MASH_COOLING_RATE },
+    { ...G.EVAP_RATE },
   ];
 
   const steps = [
     { label: "Mash In", duration: () => 0, mash: (p) => p.mashInTemp },
     { label: "Rampa de fitase", duration: (p) => p.rampaFitaseTime, mash: sameMash },
     { label: "Transferência da 1ª decocção Mostura → Fervura", duration: (p) => p.transferTime, mash: sameMash, boil: sameMash, pullsDecoction: true, restsForConversion: true },
-    { label: "Aquecimento da 1ª decocção (até a sacarificação)", duration: (p, prev) => (p.decoccao1SaccTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.decoccao1SaccTemp },
+    { label: "Aquecimento da 1ª decocção (até a sacarificação)", duration: (p, prev) => (p.decoccao1SaccTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.decoccao1SaccTemp, targetKey: "decoccao1SaccTemp" },
     { label: "Sacarificação da decocção", duration: (p) => p.saccTime, mash: sameMash, boil: sameBoil },
-    { label: "Aquecimento da 1ª decocção (até a fervura)", duration: (p, prev) => (p.fervuraTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.fervuraTemp },
+    { label: "Aquecimento da 1ª decocção (até a fervura)", duration: (p, prev) => (p.fervuraTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.fervuraTemp, targetKey: "fervuraTemp" },
     { label: "Primeira decocção", duration: (p) => p.decoction1Time, mash: sameMash, boil: sameBoil },
     { label: "Transferência Fervura → Mostura", duration: (p) => p.transferTime, mash: (p) => p.mashTemp2, boil: (p) => p.mashTemp2, returnsDecoction: true, targetKey: "mashTemp2" },
     { label: "Rampa de protease", duration: (p) => p.rampaProteaseTime, mash: sameMash, boil: sameBoil },
     { label: "Transferência da 2ª decocção Mostura → Fervura", duration: (p) => p.transferTime, mash: sameMash, boil: sameBoil, pullsDecoction: true, restsForConversion: true },
-    { label: "Aquecimento da 2ª decocção (até a sacarificação)", duration: (p, prev) => (p.decoccao2SaccTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.decoccao2SaccTemp },
+    { label: "Aquecimento da 2ª decocção (até a sacarificação)", duration: (p, prev) => (p.decoccao2SaccTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.decoccao2SaccTemp, targetKey: "decoccao2SaccTemp" },
     { label: "Sacarificação da decocção", duration: (p) => p.saccTime, mash: sameMash, boil: sameBoil },
-    { label: "Aquecimento da 2ª decocção (até a fervura)", duration: (p, prev) => (p.fervuraTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.fervuraTemp },
+    { label: "Aquecimento da 2ª decocção (até a fervura)", duration: (p, prev) => (p.fervuraTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.fervuraTemp, targetKey: "fervuraTemp" },
     { label: "Segunda decocção", duration: (p) => p.decoction2Time, mash: sameMash, boil: sameBoil },
     { label: "Transferência Fervura → Mostura", duration: (p) => p.transferTime, mash: (p) => p.mashTemp3, boil: (p) => p.mashTemp3, returnsDecoction: true, targetKey: "mashTemp3" },
     { label: "Rampa de sacarificação", duration: (p) => p.rampaSaccTime, mash: sameMash, boil: sameBoil },
     { label: "Transferência da 3ª decocção Mostura → Fervura", duration: (p) => p.transferTime, mash: sameMash, boil: sameBoil, pullsDecoction: true, restsForConversion: false },
-    { label: "Aquecimento da 3ª decocção", duration: (p, prev) => (p.fervuraTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.fervuraTemp },
+    { label: "Aquecimento da 3ª decocção", duration: (p, prev) => (p.fervuraTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.fervuraTemp, targetKey: "fervuraTemp" },
     { label: "Terceira decocção", duration: (p) => p.decoction3Time, mash: sameMash, boil: sameBoil },
     { label: "Transferência Fervura → Mostura", duration: (p) => p.transferTime, mash: (p) => p.mashOutTemp, boil: (p) => p.mashOutTemp, returnsDecoction: true, targetKey: "mashOutTemp" },
     { label: "Mash Out", duration: (p) => p.mashOutTime, mash: sameMash },
@@ -558,11 +677,22 @@ function buildBoaventura() {
     { key: "rampaDextrinizacaoTime", label: "Rampa de dextrinização", unit: "min", group: "Rampas", default: 5, min: 0, max: 90, step: 1 },
     { ...G.TRANSFER_TIME, default: 5 },
     { ...G.FERVURA_TEMP, default: 100 },
-    { key: "decoctionTime", label: "Tempo da decocção (fervura)", unit: "min", group: "Decocções", default: 15, min: 0, max: 60, step: 1 },
+    // 30min, não 15 — "Uma Decocção Só" (nota externa, décima primeira
+    // leitura): com o salto de apenas 5°C que este método precisa fazer
+    // (71→76, o menor dos 13 saltos dos sete métodos), 15min de fervura
+    // dava a MENOR carga térmica do app (259 %·min, 4,8x abaixo da
+    // mediana) — perto da faixa em que os dois únicos estudos publicados
+    // que medem o gradiente (Enge 2005, painel sensorial; Mikyška 2023,
+    // química) não distinguem decocção simples de infusão pura. 30min
+    // dobra a carga térmica (517 %·min) sem mudar desenho nem estrutura,
+    // chegando perto da decocção simples que o Mikyška de fato mediu
+    // (2,2x isso) — e o método continua sendo o mais rápido do app.
+    { key: "decoctionTime", label: "Tempo da decocção (fervura)", unit: "min", group: "Decocções", default: 30, min: 0, max: 60, step: 1 },
     { ...G.MASHOUT_TEMP, default: 76 },
     { ...G.MASHOUT_TIME, default: 10 },
     { ...G.HEATING_RATE, default: 2 },
     { ...G.MASH_COOLING_RATE },
+    { ...G.EVAP_RATE },
   ];
 
   const steps = [
@@ -571,7 +701,7 @@ function buildBoaventura() {
     { label: "Aquecimento até a rampa de dextrinização", duration: (p, prev) => (p.dextrinizacaoTemp - prev.mash) / p.heatingRate, mash: (p) => p.dextrinizacaoTemp },
     { label: "Rampa de dextrinização", duration: (p) => p.rampaDextrinizacaoTime, mash: sameMash },
     { label: "Transferência Mostura → Fervura", duration: (p) => p.transferTime, mash: sameMash, boil: sameMash, pullsDecoction: true, restsForConversion: false },
-    { label: "Aquecimento até a fervura", duration: (p, prev) => (p.fervuraTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.fervuraTemp },
+    { label: "Aquecimento até a fervura", duration: (p, prev) => (p.fervuraTemp - prev.boil) / p.heatingRate, mash: sameMash, boil: (p) => p.fervuraTemp, targetKey: "fervuraTemp" },
     { label: "Decocção (fervura)", duration: (p) => p.decoctionTime, mash: sameMash, boil: sameBoil },
     { label: "Transferência Fervura → Mostura (Mash Out)", duration: (p) => p.transferTime, mash: (p) => p.mashOutTemp, boil: (p) => p.mashOutTemp, returnsDecoction: true, targetKey: "mashOutTemp" },
     { label: "Mash Out", duration: (p) => p.mashOutTime, mash: sameMash },
@@ -828,7 +958,7 @@ const METHODS = [
   { id: "dupla-tradicional", name: "Dupla Tradicional", description: "Duas decocções: rampa de protease no início, depois duas puxadas que levam a mostura até a sacarificação e até o mash-out.", source: "Kunze, Technology Brewing and Malting, 3ª ed.; Narziß, Abriss der Bierbrauerei, 7ª ed.", ...duplaTradicional },
   { id: "dupla-moderna", name: "Dupla Moderna", description: "Duas decocções com rampa de fitase (Säurerast) no início, pensada pra maltes menos modificados — mesma lógica da Dupla Tradicional, temperaturas iniciais mais baixas.", source: "Narziß, Abriss der Bierbrauerei, 7ª ed. (Säurerast)", ...duplaModerna },
   { id: "hochkurz", name: "Hochkurz", description: "Duas decocções compactas com rampas de maltose e dextrinização — cerveja com corpo mais leve; a 2ª decocção vai direto à fervura, sem o repouso de sacarificação da 1ª, no total bem mais curta.", source: "Narziß, Abriss der Bierbrauerei, 7ª ed., §2.3.3.4; Narziß, Die Bierbrauerei Band 2, §3.2.4.5, p. 350", ...hochkurz },
-  { id: "boaventura", name: "Boaventura", description: "Rampas de maltose e dextrinização por aquecimento direto na tina; só ao final é puxada uma decocção única, já sacarificada, direto pra fervura.", source: "Autoral (Henrique Boaventura) — variante do Hochkurz, Braukaiser Wiki", ...boaventura },
+  { id: "boaventura", name: "Boaventura", description: "Rampas de maltose e dextrinização por aquecimento direto na tina; só ao final é puxada uma decocção única, já sacarificada, direto pra fervura. É o programa mais curto do app por larga margem — mas também o de menor carga térmica: escolha-o pela praticidade de rodar um Hochkurz sem tina aquecida, não pelo caráter de decocção, que a Dupla Tradicional entrega bem mais.", source: "Autoral (Henrique Boaventura) — variante do Hochkurz, Braukaiser Wiki", ...boaventura },
   { id: "dupla-aprimorada", name: "Dupla Aprimorada", description: "Uma decocção grande devolvida em duas adições parciais, mais uma decocção menor no fim — o \"Enhanced Double Decoction\" do Braukaiser Wiki.", source: "Braukaiser Wiki — Enhanced Double Decoction", ...duplaAprimorada },
   { id: "tripla-tradicional", name: "Tripla Tradicional", description: "Três decocções — o método clássico completo, mais longo e com perfil de melanoidinas mais pronunciado.", source: "Narziß, Die Bierbrauerei Band 2, §3.2.4.10 — Dreimaischverfahren", ...tripla },
   {

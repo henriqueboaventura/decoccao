@@ -151,11 +151,21 @@ function computeEffectiveRows(rows, actualStepEndMin) {
 // `nowMin - lastAtMin` zerar pra sempre na última etapa, e o alarme
 // parava de repetir bem na hora em que mais fazia falta.
 function nextAlarmState(alarmState, opts) {
-  const { running, finished, activeIndex, rowsLength, targetTotalMin, nowMin, maxRepeats, repeatEveryMin } = opts;
+  const { running, finished, activeIndex, rowsLength, targetTotalMin, activeDuration, nowMin, maxRepeats, repeatEveryMin } = opts;
   if (!running || finished || activeIndex < 0 || activeIndex >= rowsLength || nowMin === null) {
     return { fire: false, alarmState };
   }
   if (targetTotalMin === null || targetTotalMin === undefined || targetTotalMin <= 0) {
+    return { fire: false, alarmState };
+  }
+  // Achado Q13 (guarda acima) só protege a etapa 0 — mas QUALQUER etapa de
+  // 0 minuto no meio do programa (uma rampa zerada, um Mash Out sem
+  // repouso) herda o mesmo horário-alvo da etapa anterior: no instante em
+  // que ela vira ativa, `nowMin >= targetTotalMin` já é verdade, e o
+  // alarme dispara na hora — três dos oito métodos vêm assim de fábrica
+  // (achado Y8, grave, décima primeira leitura). Uma etapa sem duração
+  // não tem o que esperar; não tocar por ela.
+  if (activeDuration !== null && activeDuration !== undefined && activeDuration <= 1e-9) {
     return { fire: false, alarmState };
   }
   if (nowMin < targetTotalMin - 1e-9) return { fire: false, alarmState };

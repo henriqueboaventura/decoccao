@@ -119,6 +119,32 @@
   border: 0;
 }
 
+/* Achado Y10 (décima primeira leitura): a página não tinha nenhum h1/h2 —
+   navegar por cabeçalho (o mecanismo mais usado por quem usa leitor de
+   tela, acima de links/marcos) não levava a lugar nenhum, e sem link de
+   "pular pro conteúdo" o teclado atravessa as 8 abas de método antes de
+   chegar no primeiro campo. Escondido como .sr-only até ganhar foco —
+   aparece só pra quem navega por teclado, sem mudar nada visualmente pra
+   quem usa mouse/touch. */
+.skip-link {
+  position: absolute;
+  top: -3rem;
+  left: 1rem;
+  z-index: 100;
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  padding: 0.5rem 0.9rem;
+  border-radius: var(--radius);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.78rem;
+  text-decoration: none;
+  transition: top 0.15s ease;
+}
+.skip-link:focus {
+  top: 0.6rem;
+}
+
 * { box-sizing: border-box; }
 /* Scroll horizontal no celular: os tooltips "?" (.hint::after) ficam
    sempre no layout em opacity:0 quando fechados (só isso permite a
@@ -184,6 +210,7 @@ button, select, input {
 .theme-toggle:hover { border-color: var(--copper); color: var(--text); }
 
 .brand__mark {
+  margin: 0;
   font-family: var(--font-display);
   font-weight: 800;
   font-size: 1.5rem;
@@ -340,7 +367,11 @@ button, select, input {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--copper);
+  /* --copper mede 4,49:1 sobre --surface no tema claro — falta 0,01 pro
+     mínimo AA de 4,5:1 (achado Y13, décima primeira leitura).
+     --copper-strong (6,62:1) resolve sem mudar a cor de acento em nenhum
+     outro lugar que já passava. */
+  color: var(--copper-strong);
   margin: 0 0 0.5rem;
   padding-bottom: 0.3rem;
   border-bottom: 1px solid var(--line);
@@ -437,6 +468,32 @@ button, select, input {
 .hint--flip-up::after { top: auto; bottom: 140%; transform: translateY(2px); }
 .hint--flip-up:hover::after, .hint--flip-up.is-open::after, .hint--flip-up:focus-visible::after {
   transform: translateY(0);
+}
+
+/* Achado Y9 (grave, décima primeira leitura): `max-width` limita a
+   LARGURA do tooltip, mas não a POSIÇÃO — um "?" perto da borda esquerda
+   ainda ancora nele (`left:0`), e a caixa de até 260px estourava a tela
+   inteira (100% cortado a 320-360px, 91% num iPhone 14). Abaixo de 640px
+   o tooltip para de se ancorar no botão: vira uma folha fixa na base da
+   tela, com a largura toda — nunca mais escapa, não importa onde o "?"
+   esteja. */
+@media (max-width: 640px) {
+  .hint::after,
+  .hint--volume::after,
+  .hint--flip-up::after {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    top: auto;
+    bottom: 12px;
+    width: auto;
+    max-width: none;
+    transform: translateY(8px);
+  }
+  .hint:hover::after, .hint.is-open::after, .hint:focus-visible::after,
+  .hint--flip-up:hover::after, .hint--flip-up.is-open::after, .hint--flip-up:focus-visible::after {
+    transform: translateY(0);
+  }
 }
 
 /* Puxada acima de 60% do volume total — nenhum programa publicado vai tão
@@ -703,6 +760,7 @@ button, select, input {
 
 .schedule-panel { padding: 0; overflow: hidden; }
 .schedule-title {
+  margin: 0;
   font-family: var(--font-display);
   font-size: 0.72rem;
   font-weight: 700;
@@ -914,4 +972,19 @@ dialog.modal::backdrop { background: rgba(10, 8, 5, 0.55); }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
+}
+
+/* Achado Y15 (décima primeira leitura): zero regra de impressão — o
+   passo a passo do programa (schedule-panel/ladder) é a única coisa do
+   app que faz sentido levar pro balcão da cozinha em papel; o resto
+   (abas, toolbar de predefinições, gráfico, painel do cronômetro, tema)
+   não serve de nada impresso e só gasta tinta. */
+@media print {
+  .theme-toggle, .method-tabs, .method-select, .params-panel, .toolbar, .autosave-note,
+  .chart-panel, .timer-panel, .summary-bar, .footer-note, .toast, dialog {
+    display: none !important;
+  }
+  body, .layout { display: block; background: #fff; color: #000; }
+  .panel, .schedule-panel { border: 1px solid #999; background: #fff; color: #000; box-shadow: none; }
+  .ladder-row.is-active { background: none; }
 }

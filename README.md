@@ -123,6 +123,9 @@ bate com o código" não pega regressão nenhuma.
 ## Estrutura
 
 - `index.html`, `styles.css`, `app.js` — interface.
+- `sobre.html`, `sobre.css` — página de leitura ("Por que decocção?"),
+  separada do app de propósito pra não competir por espaço com a tela
+  de trabalho. Reaproveita tokens/tema de `styles.css`.
 - `app-core.js` — lógica do cronômetro/interface sem DOM (repetição e
   teto do alarme, deslocamento do cronograma por atraso/adiantamento,
   faixas de severidade de aviso, decisão de mostrar a panela de

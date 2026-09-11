@@ -7,7 +7,9 @@ const CACHE_VERSION = "decoccao-v" + APP_VERSION;
 const ASSETS = [
   "./",
   "./index.html",
+  "./sobre.html",
   "./styles.css",
+  "./sobre.css",
   "./version.js",
   "./app.js",
   "./app-core.js",

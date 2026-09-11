@@ -33,6 +33,8 @@
     maxPullWrap: document.getElementById("maxPullWrap"),
     maxPullLabel: document.getElementById("maxPullLabel"),
     maxPull: document.getElementById("maxPull"),
+    thermalLoadWrap: document.getElementById("thermalLoadWrap"),
+    thermalLoad: document.getElementById("thermalLoad"),
     resultsNormal: document.getElementById("resultsNormal"),
     pseudoUnreachable: document.getElementById("pseudoUnreachable"),
     pseudoUnreachableTitle: document.getElementById("pseudoUnreachableTitle"),
@@ -329,7 +331,7 @@
     { test: (p) => p.key === "grainWeight", text: "Massa de malte já moído usada na mostura. Entra no cálculo do volume total da mostura (o grão molhado ocupa espaço além da água, ~0,67L por kg), o que também influencia o volume calculado pra puxar em cada decocção." },
     { test: (p) => p.key === "mashInTemp", text: "Temperatura da mostura logo depois de misturar a água com o malte moído (Mash In) — o ponto de partida do programa, antes de qualquer rampa ou decocção." },
     { test: (p) => p.key === "heatingRate", text: "Velocidade de aquecimento considerada pro seu fogo/resistência, em °C por minuto. Usada só pra estimar a duração das etapas de aquecimento — não muda volumes nem temperaturas do programa." },
-    { test: (p) => p.key === "mashCoolingRate", text: "Quanto a mostura principal esfria por minuto enquanto fica parada esperando a decocção (puxada, fervendo, voltando), em °C por minuto. Padrão 0: tina com aquecimento que mantém a temperatura, ou perda desprezível. Se sua tina esfria de verdade nesse meio-tempo, ajustar aqui aumenta o volume calculado pra puxar — compensa a perda de calor real." },
+    { test: (p) => p.key === "mashCoolingRate", text: "Quanto a mostura principal esfria por minuto sempre que fica parada sem fogo por baixo — num repouso declarado ou esperando uma decocção voltar —, em °C por minuto. Padrão 0: tina com aquecimento que mantém a temperatura, ou perda desprezível. Se sua tina esfria de verdade, ajustar aqui reflete a perda real no programa inteiro, não só durante a decocção." },
     // Pseudo-decoccão: regras específicas ANTES das genéricas de baixo —
     // fervuraTemp/decoctionTime/transferTime são reaproveitados de outros
     // métodos, mas lá o texto fala de "puxada"/"retorno"/"tina de
@@ -342,6 +344,11 @@
     { test: (p) => p.key === "liquefacaoTime", text: "Duração do repouso de liquefação da 1ª parcela, antes dela ir à fervura." },
     { test: (p) => p.group === "Parcela" && p.key === "fervuraTemp", text: "Temperatura REAL da fervura da 1ª parcela — diferente da decocção clássica, aqui não é uma convenção de balanço térmico (lá o valor padrão de 90-100°C é só um número de fórmula): é a temperatura de verdade que a panela atinge, porque é a mesma panela que depois recebe a água e o malte restantes." },
     { test: (p) => p.group === "Parcela" && p.key === "decoctionTime", text: "Duração da fervura da 1ª parcela — é o tempo que gera a reação de Maillard e rompe a parede celular do malte fervido, a base física do método. Junto com a taxa de evaporação (campo ao lado), decide quanta água a fervura tira da parcela antes da mistura final." },
+    // Achado Y5 (décima primeira leitura): mesma chave, dois métodos —
+    // aqui na decocção real (panela aberta, sem controle de W1), texto
+    // próprio; a regra de baixo (sem guarda de group) continua servindo
+    // só pra pseudo-decocção, que é a única com group "Parcela".
+    { test: (p) => p.key === "evapRatePctPerHour" && p.group === "Decocções", text: "Quanto a fervura da decocção evapora por hora, em % do que foi puxado. Padrão 0: panela com tampa, ou perda desprezível na duração da sua fervura. A água que evapora nunca volta pra mostura — sem esse campo, o volume final estimado da mostura saía sempre otimista, como se 100% do que foi puxado retornasse." },
     { test: (p) => p.key === "evapRatePctPerHour", text: "Quanto a fervura da 1ª parcela evapora por hora, em % do que tinha de água. Padrão 0: panela com tampa, ou perda desprezível na duração da sua fervura. A água que evapora entra na conta do alvo — sem isso, a mistura final saía meio a dois graus mais fria do que o alvo pedido, porque W1 era resolvido como se toda a água ainda estivesse lá." },
     { test: (p) => p.group === "Parcela" && p.key === "transferTime", text: "Tempo de cada adição (a da água restante e a do malte restante) — são duas adições na mesma panela, não uma transferência entre tinas." },
     { test: (p) => p.key === "proteaseTemp", text: "Temperatura da rampa de protease, logo depois da 2ª parcela entrar. Zerar o campo \"Rampa de protease\" (ao lado) pula essa etapa inteira — nesse caso o alvo da mistura vira a temperatura da rampa de β-amilase, não esta aqui." },
@@ -756,10 +763,15 @@
       // Na pseudo-decocção, a água que evapora na fervura da 1ª parcela
       // some do volume final da mostura combinada — sem isso o número
       // mostrado ficava sempre o de antes de ferver, otimista pro volume
-      // real (achado S4, sétima leitura).
+      // real (achado S4, sétima leitura). Os sete métodos reais tinham o
+      // MESMO problema sem nenhum campo pra corrigir: a decocção ferve
+      // numa panela aberta e o app devolvia 100% do volume puxado, como
+      // se nada evaporasse — `evaporatedL` (methods.js, com padrão 0%/h)
+      // fecha a mesma lacuna que a pseudo já tinha fechado (achado Y5,
+      // décima primeira leitura).
       const evaporatedL = pseudoParcelaRow
         ? Math.max(0, pseudoParcelaRow.pseudoParcelaW1 - pseudoParcelaRow.pseudoEspessura * pseudoParcelaRow.pseudoParcelaG1)
-        : 0;
+        : rows.filter((r) => r.pullsDecoction).reduce((sum, r) => sum + (r.evaporatedL || 0), 0);
       const mashVolumeL = grossMashVolumeL - evaporatedL;
       el.mashVolume.textContent = `${fmtNum(mashVolumeL)} L`;
       if (pseudoParcelaRow) {
@@ -772,7 +784,10 @@
       } else {
         ensureHint(el.mashVolumeWrap,
           `Volume total estimado da mostura (água + malte molhado): ${fmtNum(state.params.waterVolume)}L de água ` +
-          `+ ${fmtNum(state.params.grainWeight)}kg de malte × 0,67L/kg = ${fmtNum(mashVolumeL)}L. ` +
+          `+ ${fmtNum(state.params.grainWeight)}kg de malte × 0,67L/kg = ${fmtNum(grossMashVolumeL)}L` +
+          (evaporatedL > 0.005
+            ? ` − ${fmtNum(evaporatedL)}L evaporados na fervura da decocção = ${fmtNum(mashVolumeL)}L. `
+            : ". ") +
           "É o volume de referência usado pra calcular quanto puxar em cada decocção.",
           "volume da mostura"
         );
@@ -787,6 +802,10 @@
           `${fmtNum(pseudoParcelaRow.pseudoEspessura)} L/kg de espessura.`,
           "1ª parcela"
         );
+        // "Carga térmica" (abaixo) é a fração puxada × minutos de fervura
+        // de uma decocção real — a pseudo não puxa nada, divide a
+        // mostura, então o número não tem o que significar aqui.
+        el.thermalLoadWrap.hidden = true;
       } else {
         el.maxPullLabel.textContent = "Maior puxada:";
         const pulls = rows.filter((r) => r.decoctionVolumeL !== undefined);
@@ -800,6 +819,27 @@
             : "Este método não puxa decocção.",
           "maior puxada"
         );
+
+        // "Uma Decocção Só" (nota externa, décima primeira leitura):
+        // Etapas/Volume/Maior puxada não respondem "quanto de decocção
+        // este programa de fato entrega" — dois métodos com a mesma
+        // maior puxada podem ferver por tempos bem diferentes. Carga
+        // térmica = Σ(fração puxada % × minutos de fervura), somada por
+        // puxada — o mesmo índice que mostrou o Boaventura como o de
+        // menor carga do app (259 %·min de fábrica) e a Dupla Moderna
+        // como a maior (1872). Índice COMPARATIVO deste app, não uma
+        // grandeza publicada — por isso a unidade "%·min" só aparece no
+        // tooltip, nunca como se fosse física.
+        el.thermalLoadWrap.hidden = pulls.length === 0;
+        if (pulls.length) {
+          const thermalLoad = pulls.reduce((sum, r) => sum + r.decoctionFraction * 100 * (r.boilMin || 0), 0);
+          el.thermalLoad.textContent = `${fmtNum(thermalLoad, 0)}`;
+          ensureHint(el.thermalLoadWrap,
+            `Índice comparativo deste app (não é uma grandeza publicada): soma, por puxada, da fração puxada em % vezes os minutos que ela passa em fervura plena na panela — ${pulls.map((r) => `${fmtNum(r.decoctionFraction * 100, 0)}%×${fmtNum(r.boilMin || 0, 0)}min`).join(" + ")}. ` +
+            `Quanto maior, mais mostura de fato passa pela fervura da decocção — dois programas com a mesma maior puxada podem ter cargas bem diferentes se uma ferve mais tempo que a outra.`,
+            "carga térmica"
+          );
+        }
       }
       timer.lastRows = rows;
       // `renderResults()` atualiza `timer.lastRows` em MEMÓRIA a cada
@@ -1640,13 +1680,15 @@
   // pura em DecoccaoCore.nextAlarmState (app-core.js, achados N1/Q13) —
   // aqui só repassa timer/rows e aplica o efeito (som/vibração/save).
   function maybeAlarm(rows, activeIndex, nowMin, finished) {
-    const targetTotalMin = activeIndex >= 0 && activeIndex < rows.length ? rows[activeIndex].totalMin : null;
+    const activeRow = activeIndex >= 0 && activeIndex < rows.length ? rows[activeIndex] : null;
+    const targetTotalMin = activeRow ? activeRow.totalMin : null;
     const result = nextAlarmState(timer.alarm, {
       running: timer.running,
       finished,
       activeIndex,
       rowsLength: rows.length,
       targetTotalMin,
+      activeDuration: activeRow ? activeRow.duration : null,
       nowMin,
       maxRepeats: ALARM_MAX_REPEATS,
       repeatEveryMin: ALARM_REPEAT_EVERY_MIN,

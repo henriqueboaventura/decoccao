@@ -6,6 +6,130 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 versionamento segue [SemVer](https://semver.org/lang/pt-BR/) (`MAJOR.MINOR.PATCH`).
 A versão atual fica em `version.js` e aparece no rodapé do app.
 
+## [1.14.0] — 2026-09-11
+
+Nota externa "Uma Decocção Só" — não é auditoria de bug, é uma análise do
+método Boaventura (autoral) contra a literatura. Os dois únicos
+experimentos publicados que medem infusão vs. 1 vs. 2 vs. 3 decocções com
+a mesma matéria-prima (Enge et al. 2005, painel sensorial; Mikyška, Dušek
+& Slabý 2023, química) concordam que a decocção simples mal se distingue
+da infusão — o ganho começa na dupla — e a decocção simples que eles
+mediram tinha mais que o dobro da carga térmica do Boaventura de fábrica.
+Três recomendações, todas aceitas.
+
+### Alterado
+- **Boaventura: fervura da decocção sobe de 15 para 30 minutos** —
+  dobra a carga térmica do método (259→517 %·min), chegando perto da
+  única decocção simples já medida em laboratório. Continua sendo, com
+  folga, o programa mais rápido do app (1h34→1h49 contra 2h18 do
+  segundo colocado). Efeito colateral notado nos testes: o Boaventura
+  deixa de ser o de MENOR carga térmica do app — esse posto passa pro
+  Hochkurz (327) — mas não era esse o objetivo da mudança.
+- **Descrição do método Boaventura** agora diz a consequência, não só o
+  procedimento: é o mais rápido do app por larga margem, mas também o
+  de menor carga térmica — escolha-o pela praticidade de rodar um
+  Hochkurz sem tina aquecida, não pelo caráter de decocção.
+
+### Adicionado
+- **"Carga térmica"** no resumo de cada um dos sete métodos reais, ao
+  lado de Etapas/Volume da mostura/Maior puxada — soma, por puxada, da
+  fração puxada (%) vezes os minutos que ela passa em fervura PLENA na
+  panela (não a rampa de aquecimento até lá). É o eixo em que os
+  métodos de fato diferem e que nenhuma outra ferramenta do mercado
+  mostra; o tooltip deixa explícito que é um índice comparativo deste
+  app, não uma grandeza publicada. Escondido na pseudo-decocção, que
+  não puxa decocção nenhuma.
+
+### Testes
+- Golden da carga térmica dos sete métodos (`tests/regression.test.js`)
+  — um bug meu na própria implementação (contava o tempo de AQUECIMENTO
+  até a fervura, não só a fervura de fato, inflando a carga de todo
+  método em 2-3x) foi pego por este teste antes de chegar a esta versão.
+
+## [1.13.0] — 2026-09-11
+
+Décima primeira leitura externa — a auditoria reescreveu o balanço de
+energia do zero a partir da física e bateu zero divergência contra o
+motor em todas as puxadas dos sete métodos. Os achados desta rodada
+ficavam nas BORDAS que essa comparação não cobria: extremos de
+parâmetro, retornos parciais, patamares de 0min. Corrigidos os 5 achados
+graves (Y1, Y2, Y3, Y8, Y9) e mais 6 menores (Y4, Y5, Y10, Y13, Y14,
+Y15), com uma suíte de varredura de bordas nova pra não regredir.
+
+### Corrigido
+- **Y1 (grave)** — a perda térmica não tinha piso: uma taxa alta numa
+  janela de decocção longa levava a mostura a temperaturas negativas na
+  tela (até -42,5°C num caso medido). Piso de segurança (`mash` nunca
+  fica abaixo de 0) e teto do campo baixado de 1 para 0,3°C/min — acima
+  disso não existe equipamento de brassagem real.
+- **Y2 (grave)** — quando uma puxada volta em mais de uma adição parcial
+  (Dupla Aprimorada), a checagem de viabilidade comparava toda adição
+  contra a temperatura da puxada ORIGINAL, não contra onde a adição
+  ANTERIOR deixou a tina — um alvo mais baixo que o já alcançado pedia
+  volume negativo ("devolver -5,84 L"). Agora cada retorno é checado
+  contra a referência certa.
+- **Y3 (grave)** — a panela de fervura podia "esfriar sozinha, de graça,
+  em 0 minuto": um alvo de sacarificação/fervura menor que a temperatura
+  atual da panela dava duração negativa (grampeada em 0), sem aviso
+  nenhum. Mesma checagem de viabilidade do W6, agora também no
+  aquecimento da própria panela.
+- **Y8 (grave)** — um patamar de 0 minuto no meio do programa (rampa
+  zerada, Mash Out sem repouso) herdava o horário-alvo da etapa anterior
+  e disparava o alarme no mesmo instante em que virava ativo — **3 dos 8
+  métodos vêm assim de fábrica**. Etapa sem duração não tem o que
+  esperar; não dispara mais.
+- **Y9 (grave)** — no celular, os tooltips de ajuda saíam da tela: 100%
+  cortados a 320-360px, 91% num iPhone 14/15. Abaixo de 640px o tooltip
+  vira uma folha fixa na base da tela em vez de ancorar no botão —
+  nunca mais escapa.
+- **Y4** — a perda térmica só contava durante a janela de uma decocção
+  específica; agora conta em QUALQUER etapa parada sem fonte de calor
+  (repouso declarado ou decocção fora) — é a mesma tina, no mesmo
+  estado parado, nos dois casos. **Muda números pra quem já usava esse
+  parâmetro** (padrão continua 0, sem efeito pra quem não usa).
+- **Y5** — a decocção real ferve numa panela aberta e o app devolvia
+  100% do volume puxado, como se nada evaporasse. Novo campo
+  "Evaporação da fervura da decocção" (padrão 0%/h, mesma física que a
+  pseudo-decocção já tinha) reduz o volume que retorna, não o que é
+  puxado.
+- **Y10** — a página não tinha nenhum `<h1>`/`<h2>` nem link de "pular
+  pro conteúdo" — navegar por cabeçalho (o mecanismo mais usado por
+  quem usa leitor de tela) não levava a lugar nenhum.
+- **Y13** — contraste do rótulo de grupo de parâmetros (ex.: "GERAL",
+  "INSUMOS") no tema claro media 4,49:1, 0,01 abaixo do mínimo AA.
+- **Y14** — os 3 modais (salvar/excluir predefinição, resetar
+  cronômetro) não tinham nome acessível.
+- **Y15** — zero regra de impressão; agora só o passo a passo do
+  programa vai pro papel, sem abas/toolbar/gráfico/cronômetro.
+
+### Testes
+- `tests/boundaries.test.js` (novo) — varre cada parâmetro no mínimo e
+  no máximo, cada par de campos de temperatura nos quatro cantos, e as
+  taxas de perda/evaporação no máximo cruzadas com temperatura, nos
+  sete métodos reais — confere que o motor nunca produz um resultado
+  fisicamente absurdo (negativo, NaN, volume maior que o total, panela
+  esfriando sozinha), aceitando ou recusando. É a rede que teria pego
+  os quatro achados graves de motor desta rodada antes de eles
+  chegarem a uma leitura externa.
+- Um teste de regressão dedicado por achado de motor (Y1, Y2, Y3, Y5) e
+  um por achado de cronômetro (Y8), cada um validado contra uma cópia
+  do motor com o fix revertido antes de entrar na suíte.
+
+## [1.12.0] — 2026-09-11
+
+### Adicionado
+- **Página "Por que decocção?"** (`sobre.html`) — o que é decocção, de
+  onde veio (tina de madeira sem fogo direto, malte pouco modificado,
+  calibragem "no olho" antes do termômetro) e por que ainda vale a pena
+  hoje mesmo com tina de temperatura controlada (Maillard na porção
+  fervida, ruptura mecânica do grão, fidelidade a estilo, controle fino
+  sem tina aquecida) — e quando NÃO compensa, honesto sobre o custo em
+  tempo e equipamento. Link no rodapé do app. Página separada de
+  propósito: a tela principal já está cheia de parâmetros, gráfico e
+  escada — texto de leitura não compete por espaço ali. Reaproveita os
+  tokens de cor/tipografia e o alternador de tema de `styles.css`;
+  cacheada offline pelo service worker como o resto do app.
+
 ## [1.11.6] — 2026-09-11
 
 Décima leitura externa — 7 dos 9 achados da nona fecharam de verdade; 1
