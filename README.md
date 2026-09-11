@@ -19,6 +19,12 @@ de brassagem por evento.
   são recalculados na hora, a partir do balanço de energia de cada método
   (ver `methods.js`). O gráfico marca cada mudança de temperatura com um
   ponto e o respectivo horário no eixo X.
+- Resumo de cada método com Etapas, Volume da mostura, Maior puxada e
+  **Carga térmica** — índice comparativo próprio do app (fração puxada ×
+  minutos de fervura plena, somado por puxada) que mostra o eixo em que
+  os sete métodos de decocção real de fato diferem.
+- Página separada **"Por que decocção?"** (`sobre.html`, link no rodapé)
+  com origem, motivo e trade-offs do método, pra quem não conhece.
 - Cronômetro de brassagem por evento: iniciar/pausar/resetar e confirmar
   "Cheguei" ao fim real de cada etapa (não um horário previsto) — o resto
   do cronograma se desloca pelo atraso ou adiantamento acumulado. Etapa
@@ -101,13 +107,22 @@ O que a suíte cobre:
   adiantamento (`computeEffectiveRows`, achado P1), as faixas de
   severidade de aviso, a decisão de mostrar a panela de fervura no
   gráfico (`annotateDisplayBoil`, achado N4) e a formatação de tempo.
+- **`boundaries.test.js`** — varredura de bordas: cada parâmetro no
+  mínimo e no máximo, cada par de campos de temperatura nos quatro
+  cantos, e as taxas de perda térmica/evaporação no máximo cruzadas com
+  temperatura, nos sete métodos reais. Confere que o motor nunca
+  produz um resultado fisicamente absurdo (negativo, NaN, volume maior
+  que o total, panela esfriando sozinha) — é a categoria de teste que
+  teria pego os achados graves da décima primeira leitura antes de uma
+  auditoria externa (ver `CHANGELOG.md`).
 
-Os fixtures numéricos de `regression.test.js`/`physics.test.js` vêm
-das cinco rodadas de auditoria externa deste projeto (os PDFs "Raio-X",
-"Segunda" a "Quinta Leitura da Calculadora", mantidos fora do
-repositório) — cada valor golden é um número que uma leitura
-independente conferiu à mão contra a literatura, não um número que o
-próprio motor gerou pra si mesmo.
+Os fixtures numéricos de `regression.test.js`/`physics.test.js` vêm das
+sucessivas rodadas de auditoria externa deste projeto (os PDFs "Raio-X"
+em diante, mantidos fora do repositório — ver `CHANGELOG.md` pra cada
+achado) — cada valor golden é um número que uma leitura independente
+conferiu à mão contra a literatura ou contra um modelo físico
+reconstruído do zero, não um número que o próprio motor gerou pra si
+mesmo.
 
 **Antes de publicar uma nova versão** (bump em `version.js` +
 `CHANGELOG.md`), rode `npm test` — o CI (`.github/workflows/test.yml`)
@@ -177,3 +192,8 @@ em todo push — ela sinaliza regressão (✕ vermelho no commit/PR), mas não
 bloqueia o Pages, que publica de qualquer jeito. Rodar `npm test`
 localmente antes de enviar pra `main`, especialmente antes de um bump de
 versão, continua sendo o que evita publicar uma regressão.
+
+## Problemas e sugestões
+
+Link "Reportar problema" no rodapé do app abre uma issue nova em
+https://github.com/henriqueboaventura/decoccao/issues/new.

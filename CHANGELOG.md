@@ -6,6 +6,22 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 versionamento segue [SemVer](https://semver.org/lang/pt-BR/) (`MAJOR.MINOR.PATCH`).
 A versão atual fica em `version.js` e aparece no rodapé do app.
 
+## [1.14.1] — 2026-09-12
+
+### Adicionado
+- Link "Reportar problema" no rodapé (app e página "Por que
+  decocção?"), abrindo uma issue nova em
+  `github.com/henriqueboaventura/decoccao/issues/new`.
+
+### Corrigido
+- `README.md` desatualizado: `tests/boundaries.test.js` não estava
+  documentado na seção "Testes"; a nota sobre os fixtures numéricos
+  ainda citava "cinco rodadas de auditoria externa" e uma lista de
+  PDFs parando na Quinta Leitura — bem atrás das rodadas reais do
+  projeto a essa altura. Generalizado pra não ficar stale de novo a
+  cada leitura nova. Também documentado o indicador "Carga térmica" e
+  a página "Por que decocção?" na seção "O que faz".
+
 ## [1.14.0] — 2026-09-11
 
 Nota externa "Uma Decocção Só" — não é auditoria de bug, é uma análise do
