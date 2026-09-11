@@ -35,6 +35,7 @@
     maxPull: document.getElementById("maxPull"),
     resultsNormal: document.getElementById("resultsNormal"),
     pseudoUnreachable: document.getElementById("pseudoUnreachable"),
+    pseudoUnreachableTitle: document.getElementById("pseudoUnreachableTitle"),
     pseudoUnreachableText: document.getElementById("pseudoUnreachableText"),
     timerPanel: document.querySelector(".timer-panel"),
     timerClock: document.getElementById("timerClock"),
@@ -376,6 +377,7 @@
   function closeHints() {
     document.querySelectorAll(".hint.is-open").forEach((b) => {
       b.classList.remove("is-open", "hint--flip-up");
+      b.setAttribute("aria-expanded", "false");
     });
   }
 
@@ -410,12 +412,22 @@
     btn.classList.toggle("hint--flip-up", bottomLimit - rect.bottom < 180);
   }
 
-  function makeHintBtn(text) {
+  // `subject` monta o nome acessível do botão ("Sobre: <subject>") — sem
+  // ele, os 26 "?" da tela compartilhavam o mesmo nome genérico ("Mais
+  // informações"), e a lista de botões de um leitor de tela mostrava 26
+  // entradas idênticas, sem jeito de saber qual é qual antes de abrir uma
+  // por uma (achado W3, décima leitura). Omitido só nos poucos lugares
+  // sem um assunto natural à mão.
+  function makeHintBtn(text, subject) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "hint";
     btn.textContent = "?";
-    btn.setAttribute("aria-label", "Mais informações");
+    btn.setAttribute("aria-label", subject ? `Sobre: ${subject}` : "Mais informações");
+    // O botão abre e fecha o mesmo tooltip sem nunca dizer em que estado
+    // está — alternado junto com a classe `is-open` no mesmo `if` que já
+    // decide a virada pra cima (achado W3).
+    btn.setAttribute("aria-expanded", "false");
     btn.setAttribute("data-tip", text);
     // A decisão de virar pra cima só rodava no clique — mas o tooltip
     // também abre no :hover e no :focus-visible (mouse/teclado), casos em
@@ -429,6 +441,7 @@
       if (!wasOpen) {
         updateHintFlip(btn);
         btn.classList.add("is-open");
+        btn.setAttribute("aria-expanded", "true");
       }
     });
     return btn;
@@ -437,13 +450,14 @@
   // Cria o botão de ajuda uma vez dentro de `container` e só atualiza o
   // texto nas renderizações seguintes — evita duplicar botão/listener em
   // conteúdo que é atualizado com frequência (ex.: barra de resumo).
-  function ensureHint(container, text) {
+  function ensureHint(container, text, subject) {
     let btn = container.querySelector(".hint");
     if (!btn) {
-      btn = makeHintBtn(text);
+      btn = makeHintBtn(text, subject);
       container.appendChild(btn);
     } else {
       btn.setAttribute("data-tip", text);
+      if (subject) btn.setAttribute("aria-label", `Sobre: ${subject}`);
     }
     return btn;
   }
@@ -572,7 +586,7 @@
       label.htmlFor = `p_${p.key}`;
       labelWrap.appendChild(label);
       const hintText = hintFor(p);
-      if (hintText) labelWrap.appendChild(makeHintBtn(hintText));
+      if (hintText) labelWrap.appendChild(makeHintBtn(hintText, p.label));
       const control = document.createElement("div");
       control.className = "field__control";
       const input = document.createElement("input");
@@ -670,20 +684,38 @@
         // Decocção real (W6): a condição é mais simples que a da pseudo —
         // t1 < alvo < tb, sem nada pra resolver, os dois já vinham
         // calculados na própria linha que o grampo apagava.
+        //
+        // Título e vocabulário próprios (achado X2, décima leitura): o
+        // título fixo do index.html ("Alvo da MISTURA") e o texto da
+        // pseudo não fazem sentido aqui — não existe mistura nenhuma nos
+        // sete métodos reais, é o alvo de um RETORNO de decocção. E os
+        // limites são EXCLUSIVOS (a condição é `mash >= tb`, não `>`):
+        // instruir "no máximo/pelo menos X°C" convida a digitar exatamente
+        // X, que continua rejeitado — "abaixo de"/"acima de" fecha a
+        // brecha.
+        el.pseudoUnreachableTitle.textContent = "Alvo do retorno da decocção fora do alcance";
         const tooHigh = u.target >= u.maxTarget;
         el.pseudoUnreachableText.textContent =
           `Com os parâmetros atuais, o retorno "${u.stepLabel}" pede ${fmtNum(u.target)}°C — ` +
           `fisicamente só dá pra chegar entre ${fmtNum(u.minTarget)}°C (a mostura no instante da puxada; devolver decocção nunca esfria) ` +
           `e ${fmtNum(u.maxTarget)}°C (a própria decocção fervendo; não volta mais quente que ela mesma). ` +
           (tooHigh
-            ? `Baixe o alvo desse retorno para no máximo ${fmtNum(u.maxTarget)}°C, ou suba a temperatura de fervura da decocção.`
-            : `Suba o alvo desse retorno para pelo menos ${fmtNum(u.minTarget)}°C, ou considere puxar mais cedo (mostura mais fria na hora da puxada).`);
+            ? `Baixe o alvo desse retorno para abaixo de ${fmtNum(u.maxTarget)}°C, ou suba a temperatura de fervura da decocção.`
+            : `Suba o alvo desse retorno para acima de ${fmtNum(u.minTarget)}°C, ou considere puxar mais cedo (mostura mais fria na hora da puxada).`);
+        // Foca o campo culpado — a informação existe (targetKey, marcada
+        // no próprio `step` que gerou a linha, ver methods.js) e não
+        // precisa ser adivinhada do rótulo da etapa.
         if (!state.pseudoUnreachableFocused) {
           const details = document.querySelector(".advanced-settings");
           if (details) details.open = true;
+          if (u.targetKey) {
+            const field = document.getElementById(`p_${u.targetKey}`);
+            if (field) field.focus({ preventScroll: false });
+          }
           state.pseudoUnreachableFocused = true;
         }
       } else {
+      el.pseudoUnreachableTitle.textContent = "Alvo da mistura fora do alcance";
       const belowMin = u.target < u.minTarget;
       const fieldLabel = u.usingProtease ? "da rampa de protease" : "da rampa de β-amilase";
       const fieldId = u.usingProtease ? "p_proteaseTemp" : "p_betaTemp";
@@ -734,13 +766,15 @@
         ensureHint(el.mashVolumeWrap,
           `Volume final estimado da mostura já combinada (depois da fervura da 1ª parcela): ${fmtNum(state.params.waterVolume)}L de água ` +
           `+ ${fmtNum(state.params.grainWeight)}kg de malte × 0,67L/kg − ${fmtNum(evaporatedL)}L evaporados na fervura = ${fmtNum(mashVolumeL)}L. ` +
-          "Não é usado pra puxar nada — pseudo-decocção não puxa, ferve a 1ª parcela inteira (veja abaixo)."
+          "Não é usado pra puxar nada — pseudo-decocção não puxa, ferve a 1ª parcela inteira (veja abaixo).",
+          "volume da mostura"
         );
       } else {
         ensureHint(el.mashVolumeWrap,
           `Volume total estimado da mostura (água + malte molhado): ${fmtNum(state.params.waterVolume)}L de água ` +
           `+ ${fmtNum(state.params.grainWeight)}kg de malte × 0,67L/kg = ${fmtNum(mashVolumeL)}L. ` +
-          "É o volume de referência usado pra calcular quanto puxar em cada decocção."
+          "É o volume de referência usado pra calcular quanto puxar em cada decocção.",
+          "volume da mostura"
         );
       }
 
@@ -750,7 +784,8 @@
         el.maxPull.textContent = `${fmtNum(pseudoParcelaRow.pseudoParcelaG1)} kg + ${fmtNum(pseudoParcelaRow.pseudoParcelaW1)} L`;
         ensureHint(el.maxPullWrap,
           `Volume da 1ª parcela (a que ferve sozinha) — é ela que dimensiona sua panela: ${fmtNum(totalL)}L no total, ` +
-          `${fmtNum(pseudoParcelaRow.pseudoEspessura)} L/kg de espessura.`
+          `${fmtNum(pseudoParcelaRow.pseudoEspessura)} L/kg de espessura.`,
+          "1ª parcela"
         );
       } else {
         el.maxPullLabel.textContent = "Maior puxada:";
@@ -762,10 +797,22 @@
           pulls.length
             ? `Volume da maior puxada deste programa — é ela que dimensiona sua panela de fervura da decocção. ` +
               `Recomenda-se folga de pelo menos 25% sobre esse volume, então a panela precisa ter pelo menos ${fmtNum(minPanelaL)}L.`
-            : "Este método não puxa decocção."
+            : "Este método não puxa decocção.",
+          "maior puxada"
         );
       }
       timer.lastRows = rows;
+      // `renderResults()` atualiza `timer.lastRows` em MEMÓRIA a cada
+      // render — mas só grava em disco (`saveTimer()`) nos pontos de ação
+      // (Iniciar/Pausar, Cheguei, alarme, Resetar). Editar um parâmetro
+      // (ex.: ajustar uma rampa futura) no meio de uma brassagem já
+      // iniciada muda `rows` sem passar por nenhum desses botões, e a
+      // cópia persistida envelhece — um F5 nesse intervalo volta a operar
+      // sobre o plano de ANTES da edição (achado X3, décima leitura). Só
+      // quando o cronômetro já foi iniciado nesta brassagem: gravar a
+      // cada render, antes disso, escreveria em disco a cada tecla
+      // digitada sem nada pra proteger ainda.
+      if (timerStarted()) saveTimer();
     }
     // Quando inalcançável, `rows` é o placeholder de 1 linha só (ver
     // computeSchedule) — NÃO pode alimentar o cronômetro: activeStepIndex/
@@ -778,8 +825,19 @@
     // carga fria — reload com o alvo já fora de alcance não tem render
     // anterior nesta sessão pra puxar de lá; `timer.lastRows` sobrevive
     // porque viaja dentro do próprio objeto persistido em TIMER_KEY (achado
-    // V1, nona leitura).
-    const rowsForTimer = unreachable ? (state.rows || timer.lastRows || rows) : rows;
+    // V1, nona leitura). Fallback final é array VAZIO, não `rows` — quem
+    // NUNCA teve um cronograma alcançável nesta brassagem (começou já no
+    // estado inalcançável) não tem o que resgatar, e `rows` aqui é o
+    // placeholder de 1 linha do W6/pseudo: alimentar o cronômetro com ele
+    // dá um único "Cheguei" que encerra o "programa" de mentirinha, com
+    // "Programa concluído" anunciado de verdade pro leitor de tela (achado
+    // X1, grave, décima leitura — 8x mais exposto depois do W6 valer pros
+    // sete métodos reais, não só a pseudo).
+    const rowsForTimer = unreachable ? (state.rows || timer.lastRows || []) : rows;
+    // Sem NENHUM cronograma alcançável pra operar — nem desta sessão, nem
+    // persistido. Desabilita Iniciar/Cheguei em vez de deixar o cronômetro
+    // "pronto para começar" sobre uma tina que não existe (renderTimerUI).
+    const noPlan = unreachable && rowsForTimer.length === 0;
     // Atribuição incondicional (não só no ramo alcançável): mantém
     // `state.rows` sempre igual ao que o cronômetro está de fato usando —
     // "Cheguei" (state.rows || []) e tickTimer() (state.rows.length) liam
@@ -879,11 +937,18 @@
 
   let lastAnnouncedStep = undefined;
   function renderTimerUI(rows, activeIndex, finished) {
+    // Nenhum cronograma alcançável pra operar (achado X1, décima leitura)
+    // — só acontece com o cronômetro nunca iniciado (ver rowsForTimer em
+    // renderResults: se já tivesse sido iniciado, `timer.lastRows` teria
+    // guardado o plano de então). "Iniciar"/"Cheguei" ficam desabilitados
+    // em vez de operar sobre uma linha fantasma.
+    const noPlan = rows.length === 0;
     el.timerClock.textContent = fmtClock(timerElapsedMs() / 1000);
     el.timerPanel.classList.toggle("is-running", timer.running);
     updateAudioWarning();
     el.timerToggleBtn.textContent = finished ? "Nova brassagem" : timer.running ? "Pausar" : (timer.accumulatedMs > 0 ? "Continuar" : "Iniciar");
-    el.timerArriveBtn.disabled = !(activeIndex >= 0 && !finished);
+    el.timerToggleBtn.disabled = noPlan;
+    el.timerArriveBtn.disabled = noPlan || !(activeIndex >= 0 && !finished);
     // A etapa ativa muda raramente; o "faltam Xmin" muda 2x/s (tickTimer).
     // Anunciar pro leitor de tela só na virada de etapa — um aria-live no
     // texto inteiro spammaria "faltam" a cada meio segundo.
@@ -918,6 +983,8 @@
         ? `faltam ${fmtNum(remainingMin)} min`
         : `<span class="timer-drift is-late">+${fmtNum(-remainingMin)} min além do previsto</span> nesta etapa`;
       el.timerStepLabel.innerHTML = `Etapa atual: <strong>${row.label}</strong> · ${timeText}${driftBadge}`;
+    } else if (noPlan) {
+      el.timerStepLabel.textContent = "Ajuste os parâmetros antes de começar";
     } else {
       el.timerStepLabel.textContent = "Pronto para começar";
     }
@@ -948,7 +1015,7 @@
       labelLine.className = "ladder-label__line";
       labelLine.appendChild(document.createTextNode(r.label));
       if (r.realPlateauMin !== undefined) {
-        const plateauHint = makeHintBtn(realPlateauHintText(r));
+        const plateauHint = makeHintBtn(realPlateauHintText(r), `tempo real do patamar — ${r.label}`);
         labelLine.appendChild(plateauHint);
       }
       const small = document.createElement("small");
@@ -1001,7 +1068,7 @@
         pill.className = "temp-pill temp-pill--volume";
         if (isAlarm) pill.classList.add("temp-pill--alarm");
         pill.textContent = `puxar ≈${fmtNum(r.decoctionVolumeL)} L`;
-        const hint = makeHintBtn(volumeHintText(r));
+        const hint = makeHintBtn(volumeHintText(r), `volume desta puxada — ${r.label}`);
         hint.classList.add("hint--volume");
         if (isAlarm) hint.classList.add("hint--alarm");
         const small = document.createElement("small");
@@ -1026,7 +1093,8 @@
         const hint = makeHintBtn(
           `Volume desta adição específica — a puxada inteira (${fmtNum(pullRow.decoctionVolumeL)} L) volta em mais de uma vez, ` +
           "e o resto continua fervendo na panela até a próxima adição (veja o tooltip da puxada). " +
-          `Essa parte é ${fmtNum((r.returnVolumeL / pullRow.decoctionVolumeL) * 100)}% do total puxado.`
+          `Essa parte é ${fmtNum((r.returnVolumeL / pullRow.decoctionVolumeL) * 100)}% do total puxado.`,
+          `volume desta adição — ${r.label}`
         );
         hint.classList.add("hint--volume");
         volume.setAttribute("aria-label", `Devolver ${fmtNum(r.returnVolumeL)} litros`);
@@ -1042,7 +1110,7 @@
         pill.className = "temp-pill temp-pill--volume";
         if (isAlarm) pill.classList.add("temp-pill--alarm");
         pill.textContent = `1ª parcela: ${fmtNum(r.pseudoParcelaG1)} kg + ${fmtNum(r.pseudoParcelaW1)} L`;
-        const hint = makeHintBtn(pseudoParcelaHintText(r, severity));
+        const hint = makeHintBtn(pseudoParcelaHintText(r, severity), `1ª parcela — ${r.label}`);
         hint.classList.add("hint--volume");
         if (isAlarm) hint.classList.add("hint--alarm");
         const small = document.createElement("small");
@@ -1065,7 +1133,8 @@
           "A água que sobrou da divisão entra ANTES do malte — de propósito: se o malte restante caísse direto na mostura " +
           "fervente, sem essa água na frente pra esfriar primeiro, ele chegaria perto da temperatura de fervura e as enzimas " +
           `dele morreriam antes de converter qualquer amido. Essa mistura intermediária (só água, ainda sem o malte) chega a ${fmtNum(r.mash)}°C.` +
-          (t1Hot ? " Atenção: acima de 78°C as enzimas do malte que vem a seguir já entram acima do limite seguro — considere um alvo mais baixo." : "")
+          (t1Hot ? " Atenção: acima de 78°C as enzimas do malte que vem a seguir já entram acima do limite seguro — considere um alvo mais baixo." : ""),
+          `adição de água — ${r.label}`
         );
         hint.classList.add("hint--volume");
         if (t1Hot) hint.classList.add("hint--alarm");
@@ -1078,7 +1147,8 @@
         pill.textContent = `+${fmtNum(r.pseudoMaltAddKg)} kg secos`;
         const hint = makeHintBtn(
           "O malte que sobrou da divisão, seco (sem água própria) — entra por último, depois da água já ter esfriado a mostura da " +
-          "temperatura de fervura até uma faixa segura. É ele que traz as enzimas de conversão do resto do lote, ainda intactas."
+          "temperatura de fervura até uma faixa segura. É ele que traz as enzimas de conversão do resto do lote, ainda intactas.",
+          `adição de malte — ${r.label}`
         );
         hint.classList.add("hint--volume");
         volume.setAttribute("aria-label", `Adicionar ${fmtNum(r.pseudoMaltAddKg)} quilos de malte seco`);

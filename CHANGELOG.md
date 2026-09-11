@@ -6,6 +6,56 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 versionamento segue [SemVer](https://semver.org/lang/pt-BR/) (`MAJOR.MINOR.PATCH`).
 A versão atual fica em `version.js` e aparece no rodapé do app.
 
+## [1.11.6] — 2026-09-11
+
+Décima leitura externa — 7 dos 9 achados da nona fecharam de verdade; 1
+(W3) fechou pela metade; 1 (V2) eu tinha declarado fechado e não tinha
+fechado — meu próprio script de verificação mostrou zero por estar
+quebrado, não por estar certo. Mais 4 achados novos, 1 deles grave,
+nascido da própria correção do W6 (8x mais exposto ao valer pros sete
+métodos reais, não só a pseudo). Tudo corrigido, com 3 testes de
+regressão novos fechando 4 dos 5 mutantes que a suíte deixava passar.
+
+### Corrigido
+- **X1 (grave)** — começar a brassagem já com o alvo fora de alcance
+  (nenhum cronograma alcançável nesta sessão nem persistido) deixava o
+  cronômetro operar sobre um placeholder de 1 linha: um único "Cheguei"
+  encerrava o "programa" com "Programa concluído" falso. "Iniciar" e
+  "Cheguei" agora desabilitam nesse estado, com "Ajuste os parâmetros
+  antes de começar" no lugar do relógio.
+- **V2 (correção da v1.11.5 não fechou)** — `declaredMash` capturava o
+  valor a cada linha em vez de HERDAR o do patamar inteiro; numa etapa
+  `sameMash` isso lia `prev.mash` (já resfriado uma etapa atrás), só
+  deslocando a coincidência (56→48 fusões falsas, 120→108 separações
+  falsas) em vez de removê-la. Agora herda o declarado do patamar todo,
+  fechando os dois sintomas de uma vez — validado por diferencial em
+  1.437.000 configurações (0 fusões, 0 separações falsas).
+- **X2 (texto)** — o painel de "alvo fora do alcance" reaproveitado do
+  W6 falava vocabulário da pseudo-decocção ("Alvo da MISTURA") pros
+  sete métodos reais, onde não existe mistura nenhuma; o limite é
+  exclusivo mas o texto dizia "no máximo/pelo menos X°C" (aceita
+  digitar exatamente X, que continua sendo rejeitado); e não focava
+  nem nomeava o campo culpado. Título condicional, linguagem
+  "abaixo/acima de", e foco no campo certo (`targetKey` marcado em
+  cada passo de retorno).
+- **X3 (cronômetro)** — `timer.lastRows` só era gravado em disco de
+  carona em outros saves (Iniciar, Cheguei, alarme, Resetar); editar um
+  parâmetro no meio de uma brassagem sem tocar nesses botões deixava a
+  cópia persistida envelhecer, e um F5 nesse intervalo voltava a operar
+  sobre o plano de ANTES da edição. Agora grava a cada render em que o
+  cronômetro já foi iniciado.
+- **W3 (metade da nona, fechado agora)** — os 26 botões "?" da tela
+  compartilhavam o mesmo nome acessível ("Mais informações"), e nenhum
+  expunha `aria-expanded`. Cada um agora tem nome distinto ("Sobre:
+  Volume de água (mostura)", "Sobre: tempo real do patamar — Rampa de
+  sacarificação" etc.) e alterna `aria-expanded` junto com a classe que
+  já controla a abertura visual.
+
+### Testes
+- 3 testes de regressão novos (`tests/regression.test.js`) fecham 4 dos
+  5 mutantes que a suíte deixava passar sem avisar — incluindo um que
+  desligava a validação inteira do W6 em silêncio.
+
 ## [1.11.5] — 2026-09-10
 
 Nona leitura externa — três achados abertos desde a 8ª (V1 grave, V2, V3)
