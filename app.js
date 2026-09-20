@@ -17,6 +17,7 @@
   const THEME_KEY = `${STORAGE_PREFIX}:theme`;
 
   const el = {
+    appHeader: document.querySelector(".app-header"),
     methodTabs: document.getElementById("methodTabs"),
     methodSelect: document.getElementById("methodSelect"),
     methodDescription: document.getElementById("methodDescription"),
@@ -985,6 +986,10 @@
     const noPlan = rows.length === 0;
     el.timerClock.textContent = fmtClock(timerElapsedMs() / 1000);
     el.timerPanel.classList.toggle("is-running", timer.running);
+    // A descrição do método só ajuda antes de decidir o que rodar — com a
+    // brassagem em curso ela só rouba espaço de tela do timer, que é o que
+    // importa a partir daí (mais crítico no mobile, tela curta).
+    document.body.classList.toggle("is-brewing", timerStarted());
     updateAudioWarning();
     el.timerToggleBtn.textContent = finished ? "Nova brassagem" : timer.running ? "Pausar" : (timer.accumulatedMs > 0 ? "Continuar" : "Iniciar");
     el.timerToggleBtn.disabled = noPlan;
@@ -1020,8 +1025,8 @@
       // "+Xmin vs. previsto" ao lado é o atraso ACUMULADO até a última
       // confirmação, não o estouro desta etapa em curso (achado P7).
       const timeText = remainingMin >= 0
-        ? `faltam ${fmtNum(remainingMin)} min`
-        : `<span class="timer-drift is-late">+${fmtNum(-remainingMin)} min além do previsto</span> nesta etapa`;
+        ? `<strong class="timer-remaining">faltam ${fmtNum(remainingMin)} min</strong>`
+        : `<strong class="timer-remaining is-late">+${fmtNum(-remainingMin)} min além do previsto</strong> nesta etapa`;
       el.timerStepLabel.innerHTML = `Etapa atual: <strong>${row.label}</strong> · ${timeText}${driftBadge}`;
     } else if (noPlan) {
       el.timerStepLabel.textContent = "Ajuste os parâmetros antes de começar";
@@ -1898,6 +1903,19 @@
     renderTabs();
     renderForm();
     renderPresetOptions();
+
+    // O painel do timer gruda sob o cabeçalho ao rolar (ver .timer-panel no
+    // mobile) — precisa saber a altura REAL do cabeçalho, que muda (abas vs.
+    // select, descrição some ao iniciar a brassagem), daí medir em vez de
+    // supor um valor fixo.
+    if (el.appHeader) {
+      const updateHeaderH = () => {
+        document.documentElement.style.setProperty("--header-h", `${el.appHeader.offsetHeight}px`);
+      };
+      updateHeaderH();
+      if (window.ResizeObserver) new ResizeObserver(updateHeaderH).observe(el.appHeader);
+      else window.addEventListener("resize", updateHeaderH);
+    }
 
     // Uma sessão restaurada (reload no meio da brassagem — acidental, o
     // celular descartou a aba, ou o próprio toast "Nova versão ·

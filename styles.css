@@ -306,6 +306,14 @@ button, select, input {
   opacity: 0.75;
 }
 
+/* Explicar o método só ajuda antes de decidir o que rodar — com a
+   brassagem em curso, some pra abrir espaço (crítico no mobile, onde o
+   timer sticky abaixo do cabeçalho já disputa a tela com essas linhas). */
+body.is-brewing .method-description,
+body.is-brewing .method-source {
+  display: none;
+}
+
 .layout {
   display: grid;
   grid-template-columns: minmax(280px, 340px) 1fr;
@@ -682,6 +690,18 @@ button, select, input {
 .timer-drift.is-late { color: var(--danger); }
 .timer-drift.is-early { color: var(--steel); }
 
+/* "Faltam Xmin" é o número que importa segundo a segundo enquanto a
+   mostura roda — antes ficava do mesmo tamanho/cor apagada do resto da
+   frase e se perdia perto do relógio grande. */
+.timer-remaining {
+  display: inline-block;
+  font-family: var(--font-data);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--amber-strong);
+}
+.timer-remaining.is-late { color: var(--danger-strong); }
+
 .audio-warning {
   margin: 0.3rem 0 0;
   padding: 0.25rem 0.5rem;
@@ -700,6 +720,20 @@ button, select, input {
 .timer-controls .btn { flex: 0 0 auto; }
 
 .timer-panel.is-running .timer-clock { color: var(--amber); }
+
+/* Abaixo de 860px (telas curtas) o timer é o dado mais crítico da tela —
+   perdê-lo ao rolar pra ver a escada de etapas deixa a brassagem correndo
+   sem controle visível. Gruda logo abaixo do cabeçalho (que também é
+   sticky), na altura medida por JS em --header-h — o cabeçalho muda de
+   altura (abas↔select, descrição some ao iniciar, ver body.is-brewing). */
+@media (max-width: 860px) {
+  .timer-panel {
+    position: sticky;
+    top: var(--header-h, 0px);
+    z-index: 15;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.16);
+  }
+}
 
 .chart-panel { padding: 0.9rem 1rem 0.6rem; position: relative; }
 .chart-legend {
