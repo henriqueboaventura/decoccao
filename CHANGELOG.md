@@ -6,6 +6,16 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 versionamento segue [SemVer](https://semver.org/lang/pt-BR/) (`MAJOR.MINOR.PATCH`).
 A versão atual fica em `version.js` e aparece no rodapé do app.
 
+## [1.14.2] — 2026-09-20
+
+### Corrigido
+- Espaço em tela curta (mobile): a descrição do método some assim que a
+  brassagem começa (só ajudava antes de decidir o que rodar); o "faltam
+  Xmin"/"+Xmin além do previsto" ganhou destaque, era o dado mais
+  importante da tela e ficava apagado; o painel do timer gruda sob o
+  cabeçalho ao rolar a escada de etapas (`<=860px`) — antes sumia de
+  tela com a brassagem rodando, sem nenhum controle visível.
+
 ## [1.14.1] — 2026-09-12
 
 ### Adicionado
